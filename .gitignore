@@ -1,0 +1,3 @@
+build/
+godot_project/.godot/
+*.tmp

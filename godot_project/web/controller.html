@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#eaf3ff">
+<title>Vector Controller</title>
+<style>
+  :root {
+    --bg: #eaf3ff; --card: #ffffff; --ink: #1f2a3d; --sub: #64708a;
+    --blue: #2f8bff; --blue-dark: #1a6fe0; --green: #2fbf5b; --amber: #f1a417; --red: #e5484d;
+    --ring: #c9dcf7;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; touch-action: manipulation; }
+  body { display: flex; flex-direction: column; gap: 14px;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom)); }
+  header { display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-weight: 800; font-size: 26px; letter-spacing: 2px; color: var(--blue); }
+  .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px;
+    background: var(--card); box-shadow: 0 2px 10px rgba(30,70,140,.12); font-weight: 600; font-size: 15px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--red); }
+  .dot.ok { background: var(--green); } .dot.wait { background: var(--amber); }
+  .card { background: var(--card); border-radius: 24px; padding: 18px; border: 2px solid var(--ring);
+    box-shadow: 0 6px 22px rgba(30,70,140,.12); }
+  .card h2 { margin: 0 0 6px; font-size: 19px; }
+  .card p { margin: 0; color: var(--sub); font-size: 15px; line-height: 1.4; }
+  .stats { display: flex; gap: 10px; }
+  .stat { flex: 1; text-align: center; padding: 12px 6px; }
+  .stat b { display: block; font-size: 24px; }
+  .stat span { color: var(--sub); font-size: 13px; }
+  button { appearance: none; border: 0; width: 100%; border-radius: 26px; font-weight: 800;
+    font-family: inherit; cursor: pointer; transition: transform .08s ease, filter .15s ease; }
+  button:active { transform: scale(.97); filter: brightness(.95); }
+  button:disabled { opacity: .45; }
+  .big { font-size: 24px; padding: 26px 16px; color: #fff; background: linear-gradient(#45a0ff, var(--blue-dark));
+    box-shadow: 0 6px 0 #1458b8, 0 10px 24px rgba(20,90,200,.35); }
+  .big.green { background: linear-gradient(#45d27a, #22a24c); box-shadow: 0 6px 0 #1a7e3a, 0 10px 24px rgba(30,150,70,.3); }
+  .mid { font-size: 20px; padding: 0 16px; flex: 1; min-height: 120px; color: var(--blue-dark); background: var(--card);
+    border: 3px solid var(--ring); box-shadow: 0 5px 0 var(--ring); }
+  .row { display: flex; gap: 12px; flex: 1; }
+  .grow { flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .small { background: none; color: var(--sub); font-weight: 600; font-size: 14px; padding: 10px; width: auto; }
+  .hidden { display: none !important; }
+  #debug { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; white-space: pre; color: var(--ink); }
+  #warn { color: var(--red); font-weight: 700; }
+  .grip { display: flex; gap: 10px; align-items: center; }
+  .grip svg { flex: none; }
+  #rotate { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 30px; font-size: 22px; font-weight: 700; z-index: 10; }
+  @media (orientation: landscape) and (max-height: 500px) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+  <header>
+    <div class="logo">VECTOR</div>
+    <div class="pill"><span id="connDot" class="dot"></span><span id="connText">Connecting…</span></div>
+  </header>
+
+  <!-- Step 1: enable sensors -->
+  <section id="stepEnable" class="grow">
+    <div class="card">
+      <h2>Use your phone as a motion controller</h2>
+      <p>Tap the button below and allow <b>Motion &amp; Orientation</b> access.</p>
+      <p id="warn" class="hidden"></p>
+    </div>
+    <button id="enableBtn" class="big">Enable Motion</button>
+  </section>
+
+  <!-- Step 2: play -->
+  <section id="stepPlay" class="grow hidden">
+    <div class="card grip">
+      <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true">
+        <rect x="10" y="26" width="44" height="14" rx="5" fill="#fff" stroke="#2f8bff" stroke-width="3" transform="rotate(-12 32 33)"/>
+        <path d="M50 18 l8 -6 M54 26 l9 -2" stroke="#2f8bff" stroke-width="3" stroke-linecap="round"/>
+      </svg>
+      <p><b>Hold it like a TV remote</b>: screen up, top edge pointing at the laptop. (Or upright with the camera pointing at the laptop.) Then tap <b>Calibrate</b>.</p>
+    </div>
+    <div class="stats">
+      <div class="card stat"><b id="latency">–</b><span>Wi-Fi ms</span></div>
+      <div class="card stat"><b id="rate">–</b><span>updates/s</span></div>
+      <div class="card stat"><b id="calState">No</b><span>calibrated</span></div>
+    </div>
+    <button id="calBtn" class="big green">Calibrate</button>
+    <div class="row">
+      <button id="recenterBtn" class="mid">Recenter<br><small style="font-weight:600;color:#64708a">left / right</small></button>
+    </div>
+    <div class="card hidden" id="debugCard"><div id="debug"></div></div>
+    <button id="debugBtn" class="small">Show sensor values</button>
+  </section>
+
+  <div id="rotate">Please turn your phone upright<br>(lock portrait orientation)</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const state = {
+    ws: null, open: false, rtt: -1, orientation: null,
+    accel: { x: 0, y: 0, z: 0 }, sent: 0, rate: 0, lastSend: 0,
+    calibrated: false, sensorsOn: false, gotEvent: false, wakeLock: null, denied: false,
+  };
+
+  // ---------- connection ----------
+  function setConn(kind, text) {
+    $("connDot").className = "dot " + (kind === "ok" ? "ok" : kind === "wait" ? "wait" : "");
+    $("connText").textContent = text;
+  }
+
+  function connect() {
+    setConn("wait", "Connecting…");
+    const ws = new WebSocket("wss://" + location.host + "/ws");
+    state.ws = ws;
+    ws.onopen = () => { state.open = true; setConn("ok", "Connected"); ping(); };
+    ws.onclose = () => {
+      state.open = false; state.rtt = -1;
+      setConn("bad", "Disconnected – retrying");
+      setTimeout(connect, 1000);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "pong") {
+        const r = performance.now() - m.t;
+        state.rtt = state.rtt < 0 ? r : state.rtt * 0.7 + r * 0.3;
+      } else if (m.type === "status") {
+        state.calibrated = !!m.calibrated;
+        $("calState").textContent = state.calibrated ? "Yes" : "No";
+      }
+    };
+  }
+
+  function send(obj) {
+    const ws = state.ws;
+    // drop frames instead of queueing them: stale motion is worse than none
+    if (ws && state.open && ws.readyState === 1 && ws.bufferedAmount < 2048) {
+      ws.send(JSON.stringify(obj));
+      return true;
+    }
+    return false;
+  }
+
+  function ping() { send({ type: "ping", t: performance.now() }); }
+  setInterval(ping, 500);
+
+  // ---------- sensors ----------
+  function onOrientation(e) {
+    if (e.alpha === null && e.beta === null) return;
+    state.gotEvent = true;
+    state.orientation = { alpha: e.alpha || 0, beta: e.beta || 0, gamma: e.gamma || 0 };
+    const now = performance.now();
+    if (now - state.lastSend < 8) return; // cap ~120 Hz
+    state.lastSend = now;
+    if (send({
+      type: "sensor",
+      accel: state.accel,
+      orientation: state.orientation,
+      t: now,
+      rtt: state.rtt >= 0 ? Math.round(state.rtt * 10) / 10 : undefined,
+    })) state.sent++;
+  }
+
+  function onMotion(e) {
+    const a = e.acceleration;
+    if (a && a.x !== null) state.accel = { x: +a.x.toFixed(3), y: +a.y.toFixed(3), z: +a.z.toFixed(3) };
+  }
+
+  async function enable() {
+    const warn = $("warn");
+    warn.classList.add("hidden");
+    if (!window.isSecureContext) {
+      warn.textContent = "This page must be opened with https:// – scan the QR code on the laptop again.";
+      warn.classList.remove("hidden");
+      return;
+    }
+    try {
+      // iOS 13+: both requests must start inside the tap handler
+      const reqs = [];
+      if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function")
+        reqs.push(DeviceOrientationEvent.requestPermission());
+      if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function")
+        reqs.push(DeviceMotionEvent.requestPermission());
+      const results = await Promise.all(reqs.map((r) => r.catch(() => "error")));
+      state.denied = results.some((r) => r !== "granted");
+    } catch (err) {
+      state.denied = true;
+    }
+    if (!state.sensorsOn) {
+      window.addEventListener("deviceorientation", onOrientation, true);
+      window.addEventListener("devicemotion", onMotion, true);
+      state.sensorsOn = true;
+    }
+    keepAwake();
+    $("stepEnable").classList.add("hidden");
+    $("stepPlay").classList.remove("hidden");
+    setTimeout(() => {
+      if (!state.gotEvent) {
+        $("stepPlay").classList.add("hidden");
+        $("stepEnable").classList.remove("hidden");
+        warn.innerHTML = state.denied
+          ? "Motion access was denied. On iPhone: close this tab, open the page again and tap <b>Allow</b>. " +
+            "If it never asks: Settings → Apps → Safari → Advanced → Website Data, delete this address, then retry."
+          : "No motion data is arriving. This browser may block motion sensors – try Safari (iPhone) or Chrome (Android).";
+        warn.classList.remove("hidden");
+      }
+    }, 2500);
+  }
+
+  // ---------- keep screen on ----------
+  async function keepAwake() {
+    try {
+      if ("wakeLock" in navigator) state.wakeLock = await navigator.wakeLock.request("screen");
+    } catch (e) { /* not fatal */ }
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && state.sensorsOn) keepAwake();
+  });
+
+  // ---------- buttons ----------
+  const buzz = () => { if (navigator.vibrate) navigator.vibrate(25); };
+  $("enableBtn").addEventListener("click", enable);
+  $("calBtn").addEventListener("click", () => {
+    if (send({ type: "calibrate" })) {
+      buzz();
+      $("calBtn").textContent = "Calibrated ✓";
+      setTimeout(() => ($("calBtn").textContent = "Calibrate"), 1200);
+    }
+  });
+  $("recenterBtn").addEventListener("click", () => { if (send({ type: "recenter" })) buzz(); });
+  $("debugBtn").addEventListener("click", () => {
+    const c = $("debugCard");
+    c.classList.toggle("hidden");
+    $("debugBtn").textContent = c.classList.contains("hidden") ? "Show sensor values" : "Hide sensor values";
+  });
+
+  // ---------- UI refresh ----------
+  setInterval(() => {
+    state.rate = state.sent * 2; state.sent = 0;
+    $("rate").textContent = state.open ? state.rate : "–";
+    $("latency").textContent = state.rtt >= 0 && state.open ? Math.round(state.rtt / 2) : "–";
+    const o = state.orientation, a = state.accel;
+    if (o) $("debug").textContent =
+      "alpha  " + o.alpha.toFixed(1).padStart(7) + "°\n" +
+      "beta   " + o.beta.toFixed(1).padStart(7) + "°\n" +
+      "gamma  " + o.gamma.toFixed(1).padStart(7) + "°\n" +
+      "accel  " + a.x.toFixed(2) + "  " + a.y.toFixed(2) + "  " + a.z.toFixed(2) + "\n" +
+      "rtt    " + (state.rtt >= 0 ? state.rtt.toFixed(1) + " ms" : "–");
+  }, 500);
+
+  connect();
+})();
+</script>
+</body>
+</html>
