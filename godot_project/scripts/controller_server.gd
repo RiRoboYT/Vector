@@ -8,15 +8,17 @@ extends Node
 ## warning once and the socket just works. A tiny plain-HTTP listener on
 ## HTTP_PORT redirects anyone who types the address without https://.
 
-signal message_received(data: Dictionary)
-signal controller_connected
-signal controller_disconnected
+## Several phones can be connected at once; each socket has an id (cid).
+signal message_received(cid: int, data: Dictionary)
+signal client_connected(cid: int)
+signal client_disconnected(cid: int)
 
 const HTTPS_PORT := 8443
 const HTTP_PORT := 8080
 const WS_GUID := "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 const PAGE_PATH := "res://web/controller.html"
 const HANDSHAKE_TIMEOUT_MS := 10000
+const MAX_PHONES := 12
 
 var tls_options: TLSOptions
 var page_bytes := PackedByteArray()
@@ -27,15 +29,16 @@ var error_text := ""
 var _thread: Thread
 var _running := false
 var _mutex := Mutex.new()
-var _inbox: Array[Dictionary] = []
-var _events: Array[String] = []
-var _outbox: Array[String] = []
-var _connected_flag := false
+var _inbox: Array = [] # [cid, Dictionary]
+var _events: Array = [] # [cid, "connected" | "disconnected"]
+var _outbox: Array = [] # [cid (-1 = everyone), text]
+var _connected := {} # cid -> true (main thread view)
 
 var _tls_server := TCPServer.new()
 var _http_server := TCPServer.new()
 var _clients: Array[Client] = []
-var _ws: Client = null # the active controller
+var _ws := {} # cid -> Client (network thread)
+var _next_cid := 1
 
 
 class Client:
@@ -44,6 +47,7 @@ class Client:
 	var tls: StreamPeerTLS
 	var buf := PackedByteArray()
 	var is_ws := false
+	var cid := 0
 	var closing := false
 	var closing_ms := 0
 	var created_ms := 0
@@ -74,15 +78,23 @@ func _exit_tree() -> void:
 		_thread.wait_to_finish()
 
 
-func is_controller_connected() -> bool:
-	return _connected_flag
+func is_connected_cid(cid: int) -> bool:
+	return _connected.has(cid)
 
 
-## Thread-safe: queued and sent by the network thread.
-func send_json(data: Dictionary) -> void:
+func connected_count() -> int:
+	return _connected.size()
+
+
+## Thread-safe: queued and sent by the network thread. cid -1 = all phones.
+func send_to(cid: int, data: Dictionary) -> void:
 	_mutex.lock()
-	_outbox.append(JSON.stringify(data))
+	_outbox.append([cid, JSON.stringify(data)])
 	_mutex.unlock()
+
+
+func broadcast(data: Dictionary) -> void:
+	send_to(-1, data)
 
 
 ## Main thread: deliver everything the network thread received.
@@ -94,14 +106,14 @@ func _process(_delta: float) -> void:
 	_inbox.clear()
 	_mutex.unlock()
 	for e in events:
-		if e == "connected":
-			_connected_flag = true
-			controller_connected.emit()
+		if e[1] == "connected":
+			_connected[e[0]] = true
+			client_connected.emit(e[0])
 		else:
-			_connected_flag = false
-			controller_disconnected.emit()
+			_connected.erase(e[0])
+			client_disconnected.emit(e[0])
 	for m in inbox:
-		message_received.emit(m)
+		message_received.emit(m[0], m[1])
 
 
 # ------------------------------------------------------- network thread
@@ -114,9 +126,9 @@ func _net_loop() -> void:
 		OS.delay_usec(1000)
 
 
-func _push_event(e: String) -> void:
+func _push_event(cid: int, e: String) -> void:
 	_mutex.lock()
-	_events.append(e)
+	_events.append([cid, e])
 	_mutex.unlock()
 
 
@@ -125,9 +137,12 @@ func _net_step() -> void:
 	var out := _outbox.duplicate()
 	_outbox.clear()
 	_mutex.unlock()
-	if _ws:
-		for text in out:
-			_ws_send(_ws, text)
+	for o in out:
+		if o[0] == -1:
+			for c in _ws.values():
+				_ws_send(c, o[1])
+		elif _ws.has(o[0]):
+			_ws_send(_ws[o[0]], o[1])
 	while _tls_server.is_connection_available():
 		var tcp := _tls_server.take_connection()
 		tcp.set_no_delay(true) # no Nagle: every sensor frame goes out at once
@@ -188,9 +203,9 @@ func _drop(c: Client) -> void:
 		c.tls.disconnect_from_stream()
 	c.tcp.disconnect_from_host()
 	_clients.erase(c)
-	if c == _ws:
-		_ws = null
-		_push_event("disconnected")
+	if c.is_ws and _ws.get(c.cid) == c:
+		_ws.erase(c.cid)
+		_push_event(c.cid, "disconnected")
 
 
 # ------------------------------------------------------------------- HTTP
@@ -225,13 +240,15 @@ func _http_read(c: Client) -> bool:
 		hc.update((key + WS_GUID).to_ascii_buffer())
 		var accept := Marshalls.raw_to_base64(hc.finish())
 		var resp := "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n" % accept
+		if _ws.size() >= MAX_PHONES:
+			c.stream.put_data("HTTP/1.1 503 Busy\r\nContent-Length: 0\r\n\r\n".to_ascii_buffer())
+			return false
 		c.stream.put_data(resp.to_ascii_buffer())
 		c.is_ws = true
-		if _ws: # newest controller wins
-			_ws.closing = true
-			_ws.closing_ms = Time.get_ticks_msec()
-		_ws = c
-		_push_event("connected")
+		c.cid = _next_cid
+		_next_cid += 1
+		_ws[c.cid] = c
+		_push_event(c.cid, "connected")
 		return _ws_read(c)
 
 	if path == "/" or path.begins_with("/?") or path == "/index.html":
@@ -294,13 +311,13 @@ func _ws_read(c: Client) -> bool:
 		match opcode:
 			0x1, 0x0:
 				var parsed = JSON.parse_string(payload.get_string_from_utf8())
-				if parsed is Dictionary and c == _ws:
+				if parsed is Dictionary:
 					if parsed.get("type") == "ping":
 						# answered right here for an honest network measurement
 						_ws_send(c, JSON.stringify({"type": "pong", "t": parsed.get("t", 0)}))
 					else:
 						_mutex.lock()
-						_inbox.append(parsed)
+						_inbox.append([c.cid, parsed])
 						_mutex.unlock()
 			0x8:
 				_ws_frame(c, 0x8, PackedByteArray())

@@ -24,7 +24,8 @@ static var _released := {}
 static var _key_down := {}
 static var _mouse_ms := -100000
 
-var motion: MotionInput
+## Motion of the phone currently in control (set by Players).
+static var instance_motion: MotionInput
 
 
 func _init() -> void:
@@ -72,6 +73,8 @@ static func raw_just_pressed(id: String) -> bool:
 
 
 func _process(_delta: float) -> void:
+	if _pressed_pending.has(A) and OS.has_environment("VS_DEBUG"):
+		print("[pad] A pressed at pointer ", pointer, " phone_pointer=", phone_pointer, " blocked=", blocked)
 	_pressed = _pressed_pending
 	_released = _released_pending
 	_pressed_pending = {}
@@ -79,6 +82,7 @@ func _process(_delta: float) -> void:
 
 	var vp := get_viewport()
 	var vs := vp.get_visible_rect().size
+	var motion := instance_motion
 	if Time.get_ticks_msec() - _mouse_ms < 1500 or motion == null or not motion.has_data or not motion.is_calibrated:
 		pointer = vp.get_mouse_position()
 		phone_pointer = false

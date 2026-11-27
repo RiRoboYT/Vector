@@ -60,6 +60,30 @@
     background: linear-gradient(#4cc6ef, #1a98c9); border: 4px solid #1584b0; box-shadow: 0 6px 0 #116f94; font-family: inherit; }
   #warn { color: var(--red); font-weight: 700; margin-top: 10px; }
   .hidden { display: none !important; }
+  #me { display: flex; align-items: center; gap: 8px; border: 0; background: var(--card); border-radius: 999px;
+    padding: 6px 12px 6px 6px; font-family: inherit; font-weight: 800; font-size: 14px; color: var(--ink);
+    box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  #me i { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-style: normal; font-size: 14px; background: var(--blue); }
+  #wait { position: fixed; left: 14px; right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); top: 170px; z-index: 3;
+    border-radius: 40px; background: rgba(236,236,236,.88); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 24px; font-size: 24px; font-weight: 800; color: var(--sub);
+    backdrop-filter: blur(2px); }
+  #names { position: fixed; inset: 0; z-index: 6; background: rgba(0,0,0,.25); display: flex; align-items: flex-end; }
+  #names .sheet { width: 100%; background: var(--bg); border-radius: 28px 28px 0 0; padding: 18px 16px max(18px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px; }
+  #names h3 { margin: 0 0 4px; font-size: 20px; }
+  .slot { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 20px; padding: 10px 12px;
+    border: 3px solid var(--ring); }
+  .slot i { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-style: normal; font-weight: 800;
+    display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .slot input { flex: 1; min-width: 0; font: inherit; font-size: 20px; font-weight: 700; border: 0; outline: 0; background: none;
+    color: var(--ink); -webkit-user-select: text; user-select: text; }
+  .slot button { border: 0; background: #f3d7d7; color: var(--red); font-weight: 800; border-radius: 12px; padding: 8px 10px; font-family: inherit; }
+  .sheet-btns { display: flex; gap: 10px; }
+  .sheet-btns button { flex: 1; font-family: inherit; font-weight: 800; font-size: 18px; padding: 16px; border-radius: 22px; }
+  #addGuest { background: var(--card); border: 3px solid var(--blue); color: var(--blue-dark); }
+  #doneNames { background: linear-gradient(#4cc6ef, #1a98c9); color: #fff; border: 3px solid #1584b0; }
   #rotate { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center;
     text-align: center; padding: 30px; font-size: 22px; font-weight: 800; z-index: 10; }
   @media (orientation: landscape) and (max-height: 500px) { #rotate { display: flex; } }
@@ -67,7 +91,8 @@
 </head>
 <body>
   <header>
-    <div class="logo">VECTOR<small>SPORTS</small></div>
+    <button id="me" class="hidden"><i id="meNum">1</i><span id="meName">Player</span> ✎</button>
+    <div class="logo" id="logo">VECTOR<small>SPORTS</small></div>
     <div class="pill"><span id="connDot" class="dot"></span><span id="connText">Connecting…</span></div>
     <button id="centerBtn" class="chip">Center</button>
   </header>
@@ -79,6 +104,19 @@
   </div>
   <div class="a-row"><button id="btnA" class="pad-btn">A</button></div>
   <button id="btnB" class="pad-btn"><b>B</b><span>Hold to swing</span></button>
+
+  <div id="wait" class="hidden"><div id="waitText">Waiting…</div></div>
+
+  <section id="names" class="hidden">
+    <div class="sheet">
+      <h3>Players on this phone</h3>
+      <div id="slots"></div>
+      <div class="sheet-btns">
+        <button id="addGuest">+ Add guest</button>
+        <button id="doneNames">Done</button>
+      </div>
+    </div>
+  </section>
 
   <section id="start">
     <div class="card">
@@ -94,6 +132,11 @@
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  let pid = store.get("vs_pid");
+  if (!pid) { pid = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set("vs_pid", pid); }
+  let slots = [], inLobby = true, canAdd = true, myTurn = true;
   const state = {
     ws: null, open: false, rtt: -1, orientation: null,
     accel: { x: 0, y: 0, z: 0 }, gyro: { alpha: 0, beta: 0, gamma: 0 },
@@ -109,7 +152,11 @@
     setConn("wait", "Connecting…");
     const ws = new WebSocket("wss://" + location.host + "/ws");
     state.ws = ws;
-    ws.onopen = () => { state.open = true; setConn("ok", "Connected"); ping(); };
+    ws.onopen = () => {
+      state.open = true; setConn("ok", "Connected");
+      ws.send(JSON.stringify({ type: "hello", pid, name: store.get("vs_name") || "" }));
+      ping();
+    };
     ws.onclose = () => {
       state.open = false; state.rtt = -1;
       releaseAll();
@@ -124,6 +171,18 @@
         state.rtt = state.rtt < 0 ? r : state.rtt * 0.7 + r * 0.3;
       } else if (m.type === "hint") {
         $("hint").textContent = m.text || "";
+      } else if (m.type === "you") {
+        const first = !slots.length;
+        slots = m.slots || []; inLobby = !!m.lobby; canAdd = !!m.can_add;
+        renderMe();
+        if (first && slots.length && inLobby && !store.get("vs_name") && state.sensorsOn) {
+          $("names").classList.remove("hidden"); renderSlots();
+        }
+      } else if (m.type === "turn") {
+        myTurn = !!m.mine;
+        $("waitText").textContent = m.text || "Waiting…";
+        $("wait").classList.toggle("hidden", myTurn);
+        if (!myTurn) releaseAll();
       } else if (m.type === "vibrate") {
         if (navigator.vibrate) navigator.vibrate(m.ms || 100);
       }
@@ -188,6 +247,7 @@
     }
     keepAwake();
     $("start").classList.add("hidden");
+    if (slots.length && inLobby && !store.get("vs_name")) { $("names").classList.remove("hidden"); renderSlots(); }
     setTimeout(() => {
       if (!state.gotEvent) {
         $("start").classList.remove("hidden");
@@ -206,9 +266,55 @@
     if (document.visibilityState !== "visible") releaseAll();
   });
 
+  // ---------- players on this phone ----------
+  function renderMe() {
+    const me = $("me");
+    if (!slots.length) { me.classList.add("hidden"); $("logo").classList.remove("hidden"); return; }
+    me.classList.remove("hidden"); $("logo").classList.add("hidden");
+    $("meNum").textContent = slots[0].num;
+    $("meNum").style.background = "#" + slots[0].color;
+    $("meName").textContent = slots.length > 1 ? slots[0].name + " +" + (slots.length - 1) : slots[0].name;
+    if (!$("names").classList.contains("hidden")) renderSlots();
+  }
+  function renderSlots() {
+    const box = $("slots");
+    // keep text that is being typed
+    const typed = [...box.querySelectorAll("input")].map((i) => i.value);
+    box.innerHTML = "";
+    slots.forEach((s, idx) => {
+      const row = document.createElement("div");
+      row.className = "slot";
+      row.style.borderColor = "#" + s.color;
+      row.innerHTML = '<i style="background:#' + s.color + '">' + s.num + '</i>';
+      const inp = document.createElement("input");
+      inp.maxLength = 14; inp.value = typed[idx] !== undefined && typed.length === slots.length ? typed[idx] : s.name;
+      inp.placeholder = "Name"; inp.enterKeyHint = "done";
+      inp.addEventListener("change", sendNames);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+      row.appendChild(inp);
+      if (s.guest && inLobby) {
+        const rm = document.createElement("button");
+        rm.textContent = "Remove";
+        rm.addEventListener("click", () => send({ type: "remove_guest", index: idx }, true));
+        row.appendChild(rm);
+      }
+      box.appendChild(row);
+    });
+    $("addGuest").classList.toggle("hidden", !(inLobby && canAdd));
+  }
+  function sendNames() {
+    const names = [...$("slots").querySelectorAll("input")].map((i) => i.value.trim());
+    if (names[0]) store.set("vs_name", names[0]);
+    send({ type: "names", names }, true);
+  }
+  $("me").addEventListener("click", () => { $("names").classList.remove("hidden"); renderSlots(); });
+  $("doneNames").addEventListener("click", () => { sendNames(); $("names").classList.add("hidden"); });
+  $("addGuest").addEventListener("click", () => { sendNames(); send({ type: "add_guest" }, true); });
+
   // ---------- buttons ----------
   const held = {};
   function press(id, el, down) {
+    if (down && !myTurn) return;
     if (!!held[id] === down) return;
     held[id] = down;
     el.classList.toggle("down", down);

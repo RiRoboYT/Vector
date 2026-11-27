@@ -16,7 +16,11 @@ var _speed_t := 0.0
 var _hints: Control
 var _mode_lbl: Label
 var _final: Control
-var _final_score: Label
+var _results_view: ResultsView
+var _again: PillButton
+var _menu: PillButton
+var _banner: Control
+var _banner_view: BannerView
 
 
 func _ready() -> void:
@@ -68,40 +72,31 @@ func _ready() -> void:
 	_speed.custom_minimum_size = Vector2(230, 40)
 	root.add_child(_speed)
 
-	# final panel
+	# turn banner
+	_banner = Control.new()
+	_banner.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_banner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_banner.visible = false
+	root.add_child(_banner)
+	_banner_view = BannerView.new()
+	_banner_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_banner.add_child(_banner_view)
+
+	# results panel
 	_final = Control.new()
 	_final.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_final.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_final.visible = false
 	root.add_child(_final)
-	var dim := ColorRect.new()
-	dim.color = Color(1, 1, 1, 0.55)
-	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
-	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_final.add_child(dim)
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", UI.panel_style(UI.WHITE, UI.BLUE, 36, 5))
-	card.set_anchors_preset(Control.PRESET_CENTER)
-	card.custom_minimum_size = Vector2(560, 380)
-	card.position = Vector2(-280, -150)
-	_final.add_child(card)
-	var v := VBoxContainer.new()
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 14)
-	card.add_child(v)
-	v.add_child(UI.label("Final Score", 34, UI.INK, true, HORIZONTAL_ALIGNMENT_CENTER))
-	_final_score = UI.label("0", 110, UI.BLUE, true, HORIZONTAL_ALIGNMENT_CENTER)
-	v.add_child(_final_score)
-	var row := HBoxContainer.new()
-	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	row.add_theme_constant_override("separation", 30)
-	v.add_child(row)
-	var again := PillButton.new("Play Again", Vector2(230, 78))
-	again.pressed.connect(func(): play_again.emit())
-	row.add_child(again)
-	var menu := PillButton.new("Menu", Vector2(230, 78))
-	menu.pressed.connect(func(): to_menu.emit())
-	row.add_child(menu)
+	_results_view = ResultsView.new()
+	_results_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_final.add_child(_results_view)
+	_again = PillButton.new("Play Again", Vector2(240, 78))
+	_again.pressed.connect(func(): play_again.emit())
+	_final.add_child(_again)
+	_menu = PillButton.new("Menu", Vector2(240, 78))
+	_menu.pressed.connect(func(): to_menu.emit())
+	_final.add_child(_menu)
 
 
 func _hint_label(t: String) -> Label:
@@ -115,10 +110,22 @@ func set_pins(mask: Array[bool]) -> void:
 	_canvas.pins = mask
 
 
-func set_score(s: BowlingScore) -> void:
-	_canvas.marks = s.marks()
-	_canvas.totals = s.totals()
-	_canvas.current = s.current_frame() if not s.is_over() else -1
+func set_scores(scores: Array[BowlingScore], players: Array[Players.Player], cur: int) -> void:
+	_canvas.scores = scores
+	_canvas.players = players
+	_canvas.cur = cur
+
+
+func turn_banner(name: String, color: Color, sub: String) -> void:
+	_banner_view.title = name.to_upper() + "'S TURN"
+	_banner_view.color = color
+	_banner_view.sub = sub
+	_banner_view.t = 0.0
+	_banner.visible = true
+
+
+func hide_banner() -> void:
+	_banner.visible = false
 
 
 func set_mode(turn: bool) -> void:
@@ -146,9 +153,24 @@ func big_message(t: String, celebrate: bool) -> void:
 	_msg.add_theme_color_override("font_outline_color", UI.BLUE_DARK if celebrate else Color("7a8696"))
 
 
-func show_final(total: int) -> void:
-	_final_score.text = str(total)
+func show_results(scores: Array[BowlingScore], players: Array[Players.Player]) -> void:
+	var rows: Array = []
+	for i in players.size():
+		rows.append({"name": players[i].name, "color": players[i].color, "score": scores[i].total(),
+			"strikes": _count(scores[i], "X")})
+	rows.sort_custom(func(x, y): return x.score > y.score)
+	_results_view.rows = rows
+	_banner.visible = false
 	_final.visible = true
+
+
+static func _count(s: BowlingScore, mark: String) -> int:
+	var n := 0
+	for f in s.marks():
+		for m in f:
+			if m == mark:
+				n += 1
+	return n
 
 
 func _process(delta: float) -> void:
@@ -165,14 +187,24 @@ func _process(delta: float) -> void:
 	_speed_t -= delta
 	_speed.modulate.a = clampf(_speed_t / 0.5, 0.0, 1.0)
 	_canvas.queue_redraw()
+	if _banner.visible:
+		_banner_view.t += delta
+		_banner_view.queue_redraw()
+	if _final.visible:
+		var vs := _final.size
+		var n: int = _results_view.rows.size()
+		var by := _results_view.buttons_y()
+		_again.position = Vector2(vs.x * 0.5 - 260, by)
+		_menu.position = Vector2(vs.x * 0.5 + 20, by)
+		_results_view.queue_redraw()
 
 
 class HudCanvas:
 	extends Control
 	var pins: Array[bool] = []
-	var marks: Array = []
-	var totals: Array[int] = []
-	var current := 0
+	var scores: Array[BowlingScore] = []
+	var players: Array[Players.Player] = []
+	var cur := 0
 
 	func _draw() -> void:
 		_draw_pins(Vector2(34, 28))
@@ -181,7 +213,6 @@ class HudCanvas:
 	func _draw_pins(o: Vector2) -> void:
 		var bg := UI.panel_style(Color(1, 1, 1, 0.85), UI.BORDER, 22, 2)
 		draw_style_box(bg, Rect2(o, Vector2(196, 172)))
-		# rows from the back: 7-10, 4-6, 2-3, 1
 		var rows := [[6, 7, 8, 9], [3, 4, 5], [1, 2], [0]]
 		var f := UI.bold()
 		for r in rows.size():
@@ -196,53 +227,158 @@ class HudCanvas:
 				var ts := f.get_string_size(s, HORIZONTAL_ALIGNMENT_LEFT, -1, 17)
 				draw_string(f, c + Vector2(-ts.x * 0.5, 6), s, HORIZONTAL_ALIGNMENT_LEFT, -1, 17, UI.INK_DARK if up else Color(0.6, 0.62, 0.66, 0.6))
 
+	## One row per player (current player first when there are more than 4).
 	func _draw_card() -> void:
+		if scores.is_empty():
+			return
 		var f := UI.bold()
-		var fw := 54.0
-		var w := fw * 9 + 78 + 80
-		var o := Vector2(size.x - w - 30, 28)
-		draw_style_box(UI.panel_style(Color(1, 1, 1, 0.9), UI.BORDER, 16, 2), Rect2(o - Vector2(8, 8), Vector2(w + 16, 106)))
+		var name_w := 130.0
+		var fw := 46.0
+		var tenth := 66.0
+		var tot_w := 66.0
+		var row_h := 46.0
+		var w := name_w + fw * 9 + tenth + tot_w
+		var n := scores.size()
+		var shown: Array[int] = []
+		for k in mini(n, 4):
+			shown.append((cur + k) % n if n > 4 else k)
+		var h := 26.0 + row_h * shown.size() + (22.0 if n > 4 else 0.0)
+		var o := Vector2(size.x - w - 30, 26)
+		draw_style_box(UI.panel_style(Color(1, 1, 1, 0.92), UI.BORDER, 16, 2), Rect2(o - Vector2(8, 8), Vector2(w + 16, h + 16)))
+		# header
 		for f_i in 11:
-			var x := o.x + f_i * fw
-			var bw := fw if f_i < 9 else (78.0 if f_i == 9 else 80.0)
-			if f_i == 10:
-				x = o.x + fw * 9 + 78
-			var head := Rect2(Vector2(x, o.y), Vector2(bw - 3, 26))
-			var hl := f_i == current
+			var x := _col_x(o.x, f_i, name_w, fw, tenth)
+			var bw := fw if f_i < 9 else (tenth if f_i == 9 else tot_w)
 			var hs := StyleBoxFlat.new()
 			hs.bg_color = UI.BLUE if f_i < 10 else UI.INK
-			if hl:
+			if f_i < 10 and f_i == scores[cur].current_frame() and not scores[cur].is_over():
 				hs.bg_color = Color("ffb020")
-			hs.corner_radius_top_left = 8
-			hs.corner_radius_top_right = 8
-			draw_style_box(hs, head)
+			hs.corner_radius_top_left = 7
+			hs.corner_radius_top_right = 7
+			draw_style_box(hs, Rect2(Vector2(x, o.y), Vector2(bw - 3, 24)))
 			var label := str(f_i + 1) if f_i < 10 else "Total"
-			var ls := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16)
-			draw_string(f, Vector2(x + (bw - 3 - ls.x) * 0.5, o.y + 20), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UI.WHITE)
-			var body := Rect2(Vector2(x, o.y + 26), Vector2(bw - 3, 64))
-			draw_rect(body, Color("fbfbfb"))
-			draw_rect(body, UI.BORDER, false, 1.5)
-			if f_i < 10 and f_i < marks.size():
-				var m: Array = marks[f_i]
-				var cells := 3 if f_i == 9 else 2
-				var cw := 24.0
-				for k in m.size():
-					var cx := x + bw - 3 - (cells - k) * cw
-					var cell := Rect2(Vector2(cx, o.y + 26), Vector2(cw, 26))
-					draw_rect(cell, UI.BORDER, false, 1.0)
-					var t: String = m[k]
-					var tcol := Color("e0533d") if t == "X" or t == "/" else UI.INK_DARK
-					var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 18)
-					draw_string(f, Vector2(cx + (cw - ts.x) * 0.5, o.y + 46), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, tcol)
-			var total_text := ""
-			if f_i < 10 and f_i < totals.size() and totals[f_i] >= 0:
-				total_text = str(totals[f_i])
-			elif f_i == 10:
-				var best := 0
-				for t in totals:
-					if t >= 0:
-						best = t
-				total_text = str(best)
-			if total_text != "":
-				var ts2 := f.get_string_size(total_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22)
-				draw_string(f, Vector2(x + (bw - 3 - ts2.x) * 0.5, o.y + 82), total_text, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, UI.INK_DARK)
+			var ls := f.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15)
+			draw_string(f, Vector2(x + (bw - 3 - ls.x) * 0.5, o.y + 18), label, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UI.WHITE)
+		# rows
+		for r in shown.size():
+			var pi := shown[r]
+			var y := o.y + 26 + r * row_h
+			var s: BowlingScore = scores[pi]
+			var p: Players.Player = players[pi]
+			var is_cur := pi == cur
+			if is_cur:
+				draw_style_box(UI.panel_style(Color(p.color, 0.16), Color(p.color, 0.9), 10, 2), Rect2(Vector2(o.x - 4, y - 1), Vector2(w + 8, row_h - 2)))
+			draw_circle(Vector2(o.x + 12, y + row_h * 0.5 - 1), 8, p.color)
+			draw_string(f, Vector2(o.x + 26, y + row_h * 0.5 + 6), p.name.left(9), HORIZONTAL_ALIGNMENT_LEFT, name_w - 30, 18, UI.INK_DARK)
+			var marks := s.marks()
+			var totals := s.totals()
+			for f_i in 11:
+				var x := _col_x(o.x, f_i, name_w, fw, tenth)
+				var bw := fw if f_i < 9 else (tenth if f_i == 9 else tot_w)
+				var body := Rect2(Vector2(x, y), Vector2(bw - 3, row_h - 4))
+				draw_rect(body, Color(1, 1, 1, 0.95))
+				draw_rect(body, UI.BORDER, false, 1.2)
+				if f_i < 10 and f_i < marks.size():
+					var m: Array = marks[f_i]
+					var cells := 3 if f_i == 9 else 2
+					var cw := 20.0
+					for k in m.size():
+						var cx := x + bw - 3 - (cells - k) * cw
+						draw_rect(Rect2(Vector2(cx, y), Vector2(cw, 20)), UI.BORDER, false, 1.0)
+						var t: String = m[k]
+						var col := Color("e0533d") if t == "X" or t == "/" else UI.INK_DARK
+						var ts := f.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15)
+						draw_string(f, Vector2(cx + (cw - ts.x) * 0.5, y + 16), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, col)
+				var txt := ""
+				if f_i < 10 and f_i < totals.size() and totals[f_i] >= 0:
+					txt = str(totals[f_i])
+				elif f_i == 10:
+					txt = str(s.total())
+				if txt != "":
+					var fs := 22 if f_i == 10 else 17
+					var ts2 := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
+					draw_string(f, Vector2(x + (bw - 3 - ts2.x) * 0.5, y + row_h - 10), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UI.INK_DARK)
+		if n > 4:
+			var more := "+%d more players" % (n - 4)
+			draw_string(UI.regular(), Vector2(o.x + 4, o.y + h - 4), more, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UI.INK)
+
+	func _col_x(x0: float, f_i: int, name_w: float, fw: float, tenth: float) -> float:
+		if f_i < 10:
+			return x0 + name_w + f_i * fw
+		return x0 + name_w + 9 * fw + tenth
+
+
+class BannerView:
+	extends Control
+	var title := ""
+	var sub := ""
+	var color := Color.WHITE
+	var t := 0.0
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		var slide := ease(clampf(t / 0.35, 0.0, 1.0), 0.3)
+		var y := size.y * 0.56
+		var band := Rect2(Vector2(lerpf(-size.x, 0.0, slide), y - 70), Vector2(size.x, 140))
+		draw_rect(band, Color(1, 1, 1, 0.93))
+		draw_rect(Rect2(band.position, Vector2(size.x, 8)), color)
+		draw_rect(Rect2(band.position + Vector2(0, 132), Vector2(size.x, 8)), color)
+		var f := UI.bold()
+		var ts := f.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 64)
+		draw_string(f, Vector2(band.position.x + (size.x - ts.x) * 0.5, y + 14), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 64, color.darkened(0.15))
+		var line := sub if sub != "" else "Press A when ready"
+		if sub != "":
+			line += "  ·  Press A when ready"
+		var a := 0.55 + 0.45 * sin(t * 4.0)
+		var ls := UI.regular().get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, 26)
+		draw_string(UI.regular(), Vector2(band.position.x + (size.x - ls.x) * 0.5, y + 54), line, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, Color(UI.INK_DARK, a))
+
+
+class ResultsView:
+	extends Control
+	var rows: Array = []
+	const MEDALS := [Color("f2c230"), Color("b9c2cc"), Color("d08a4e")]
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func panel_rect() -> Rect2:
+		var h := 150.0 + rows.size() * 54.0 + 110.0
+		return Rect2(Vector2(size.x * 0.5 - 330, maxf(30.0, size.y * 0.5 - h * 0.5)), Vector2(660, h))
+
+	func buttons_y() -> float:
+		var r := panel_rect()
+		return r.end.y - 100
+
+	func _draw() -> void:
+		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.55))
+		var r := panel_rect()
+		draw_style_box(UI.panel_style(UI.WHITE, UI.BLUE, 36, 5), r)
+		var f := UI.bold()
+		var title := "Final Scores" if rows.size() > 1 else "Final Score"
+		var ts := f.get_string_size(title, HORIZONTAL_ALIGNMENT_LEFT, -1, 40)
+		draw_string(f, Vector2(r.get_center().x - ts.x * 0.5, r.position.y + 70), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 40, UI.INK)
+		var rank := 0
+		var prev := -1
+		for i in rows.size():
+			var row: Dictionary = rows[i]
+			if row.score != prev:
+				rank = i
+				prev = row.score
+			var y := r.position.y + 110 + i * 54
+			var rr := Rect2(Vector2(r.position.x + 40, y), Vector2(r.size.x - 80, 46))
+			draw_style_box(UI.panel_style(Color(row.color, 0.13), Color(row.color, 0.7), 23, 2), rr)
+			var mc := Vector2(rr.position.x + 30, y + 23)
+			draw_circle(mc, 17, MEDALS[rank] if rank < 3 else UI.BORDER)
+			var rs := str(rank + 1)
+			var rsz := f.get_string_size(rs, HORIZONTAL_ALIGNMENT_LEFT, -1, 20)
+			draw_string(f, mc + Vector2(-rsz.x * 0.5, 7), rs, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, UI.WHITE)
+			draw_circle(Vector2(rr.position.x + 70, y + 23), 8, row.color)
+			draw_string(f, Vector2(rr.position.x + 88, y + 32), str(row.name), HORIZONTAL_ALIGNMENT_LEFT, 260, 26, UI.INK_DARK)
+			var st := "%d strike%s" % [row.strikes, "" if row.strikes == 1 else "s"]
+			draw_string(UI.regular(), Vector2(rr.position.x + 330, y + 31), st, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, UI.INK)
+			var sc := str(row.score)
+			var scs := f.get_string_size(sc, HORIZONTAL_ALIGNMENT_LEFT, -1, 32)
+			draw_string(f, Vector2(rr.end.x - 24 - scs.x, y + 35), sc, HORIZONTAL_ALIGNMENT_LEFT, -1, 32, UI.BLUE_DARK)

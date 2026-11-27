@@ -1,6 +1,7 @@
 class_name BowlingGame
 extends Node3D
-## One full 10-frame game.
+## A 10-frame game for 1-8 players. Each player bowls a full frame, then
+## the next player is up; input is locked to the current player's phone.
 ##
 ## Controls (phone):  Left/Right = move or turn, A = switch Move/Turn,
 ## hold B -> swing arm back -> swing forward -> let go of B to release.
@@ -10,9 +11,10 @@ extends Node3D
 ## hold Q / E while releasing for left / right spin.
 
 signal finished(action: String) # "again" or "menu"
+## data["to"] = a phone id, or "*" for every phone
 signal phone_message(data: Dictionary)
 
-enum State { AIM, SWING, ROLL, SETTLE, RESULT, OVER }
+enum State { TURN_INTRO, AIM, SWING, ROLL, SETTLE, RESULT, OVER }
 enum Mode { MOVE, TURN }
 
 const MOVE_SPEED := 0.55 # m/s
@@ -21,14 +23,20 @@ const MAX_X := 0.42
 const MAX_ANGLE := deg_to_rad(5.0)
 const MIN_FORWARD_RATE := 50.0 # deg/s: slower than this is not a throw
 
-var motion: MotionInput
+var roster: Players
 var lane: BowlingLane
 var ball: BowlingBall
 var pins: Array[BowlingPin] = []
 var bowler: Character
 var camera: Camera3D
 var hud: BowlingHud
-var score := BowlingScore.new()
+var scores: Array[BowlingScore] = []
+var cur := 0 # current player index
+var score: BowlingScore:
+	get:
+		return scores[cur]
+var _aims: Array[Vector2] = [] # per-player (ball_x, angle)
+var _frame_before := 0
 
 var state := State.AIM
 var mode := Mode.MOVE
@@ -77,9 +85,21 @@ func _ready() -> void:
 	add_child(hud)
 	hud.play_again.connect(func(): finished.emit("again"))
 	hud.to_menu.connect(func(): finished.emit("menu"))
-	if motion:
-		motion.gyro_sample.connect(_on_gyro)
+	roster.gyro_sample.connect(_on_gyro)
 	_new_game()
+	if OS.get_cmdline_user_args().has("--test-results"): # test helper
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 5
+		for sc in scores:
+			while not sc.is_over():
+				sc.add(rng.randi_range(maxi(0, sc.pins_standing() - 4), sc.pins_standing()))
+		cur = 1
+		_refresh_hud()
+		if OS.get_cmdline_user_args().has("--show-final"):
+			hud.show_results(scores, roster.players)
+			Pad.pointer_visible = true
+			state = State.OVER
+		return
 	if OS.get_cmdline_user_args().has("--autothrow"): # test helper
 		await get_tree().create_timer(2.0).timeout
 		Pad.phone_button(Pad.B, true)
@@ -88,15 +108,58 @@ func _ready() -> void:
 
 
 func _new_game() -> void:
-	score.reset()
-	ball_x = 0.0
-	angle = 0.0
-	mode = Mode.MOVE
-	_full_rack()
-	_enter_aim()
+	scores.clear()
+	_aims.clear()
+	for p in roster.players:
+		scores.append(BowlingScore.new())
+		_aims.append(Vector2.ZERO)
+	cur = 0
 	_cam_pos = _aim_cam_pos()
 	_cam_look = _aim_cam_look()
 	bowler.set_ghost.call_deferred(1.0)
+	_start_turn.call_deferred()
+
+
+func player() -> Players.Player:
+	return roster.players[cur]
+
+
+func _start_turn() -> void:
+	state = State.TURN_INTRO
+	_state_t = 0.0
+	_full_rack()
+	ball_x = _aims[cur].x
+	angle = _aims[cur].y
+	mode = Mode.MOVE
+	ball.rolling = false
+	ball.hold(bowler.hand_world)
+	_guides.visible = false
+	hud.show_hints(false)
+	var p := player()
+	print("[bowling] turn: %s (frame %d)" % [p.name, score.current_frame() + 1])
+	bowler.set_ghost_tint(p.color)
+	roster.lock_to(p.pid)
+	var shared := roster.players_of(p.pid).size() > 1
+	var solo := roster.players.size() == 1
+	if not solo:
+		hud.turn_banner(p.name, p.color, "Pass the phone to %s" % p.name if shared else "")
+	_refresh_hud()
+	for q in roster.players:
+		if q.pid != p.pid:
+			phone_message.emit({"to": q.pid, "type": "turn", "mine": false, "text": "%s is bowling…" % p.name})
+	phone_message.emit({"to": p.pid, "type": "turn", "mine": true, "text": "Your turn, %s! Press A when ready" % p.name if not solo else ""})
+	phone_message.emit({"to": p.pid, "type": "vibrate", "ms": 120})
+
+
+func _update_intro() -> void:
+	var solo := roster.players.size() == 1
+	if (solo and _state_t > 0.3) or (_state_t > 0.6 and Pad.just_pressed(Pad.A)):
+		hud.hide_banner()
+		_enter_aim()
+
+
+func _refresh_hud() -> void:
+	hud.set_scores(scores, roster.players, cur)
 
 
 func _full_rack() -> void:
@@ -109,6 +172,8 @@ func _full_rack() -> void:
 func _process(delta: float) -> void:
 	_state_t += delta
 	match state:
+		State.TURN_INTRO:
+			_update_intro()
 		State.AIM:
 			_update_aim(delta)
 		State.SWING:
@@ -125,7 +190,7 @@ func _process(delta: float) -> void:
 	_update_camera(delta)
 	Sfx.roll(ball.linear_velocity.length() if ball.rolling and ball.global_position.y > -0.15 and ball.global_position.z > -BowlingLane.DECK_END else 0.0)
 	hud.set_pins(_standing_mask())
-	hud.set_score(score)
+	_refresh_hud()
 	if Input.is_key_pressed(KEY_ESCAPE) and state != State.SWING:
 		finished.emit("menu")
 
@@ -140,6 +205,7 @@ func _update_aim(delta: float) -> void:
 		ball_x = clampf(ball_x + dir * MOVE_SPEED * delta, -MAX_X, MAX_X)
 	else:
 		angle = clampf(angle + dir * TURN_SPEED * delta, -MAX_ANGLE, MAX_ANGLE)
+	_aims[cur] = Vector2(ball_x, angle)
 	_place_guides()
 	if Pad.just_pressed(Pad.B):
 		_start_swing()
@@ -153,7 +219,7 @@ func _enter_aim() -> void:
 	_follow_through = 0.0
 	hud.set_mode(mode == Mode.TURN)
 	hud.show_hints(true)
-	phone_message.emit({"type": "hint", "text": "◀ ▶ move/turn · A switch · hold B and swing"})
+	phone_message.emit({"to": player().pid, "type": "hint", "text": "◀ ▶ move/turn · A switch · hold B and swing"})
 
 
 # ----------------------------------------------------------------- swing
@@ -163,7 +229,7 @@ func _start_swing() -> void:
 	_state_t = 0.0
 	_swing_angle = 0.0
 	_back_sign = 0.0
-	_keyboard_swing = motion == null or not motion.has_data
+	_keyboard_swing = Pad.instance_motion == null or not Pad.instance_motion.has_data
 	_guides.visible = false
 	hud.show_hints(false)
 
@@ -223,12 +289,13 @@ func _release() -> void:
 	ball.spin = spin
 	_follow_through = 1.0
 	_standing_before = _count_standing()
+	_frame_before = score.current_frame()
 	_gutter = false
 	state = State.ROLL
 	_state_t = 0.0
 	hud.show_speed(speed)
 	print("[bowling] release speed=%.1f m/s x=%.2f angle=%.1f deg" % [speed, from.x, rad_to_deg(angle)])
-	phone_message.emit({"type": "hint", "text": "Nice throw!"})
+	phone_message.emit({"to": player().pid, "type": "hint", "text": "Nice throw!"})
 
 
 func _cancel_swing() -> void:
@@ -274,27 +341,24 @@ func _count_result() -> void:
 	var text := ""
 	if _standing_before == 10 and knocked == 10:
 		text = "STRIKE!"
-		phone_message.emit({"type": "vibrate", "ms": 250})
+		phone_message.emit({"to": player().pid, "type": "vibrate", "ms": 250})
 	elif _standing_before < 10 and standing == 0:
 		text = "SPARE!"
-		phone_message.emit({"type": "vibrate", "ms": 150})
+		phone_message.emit({"to": player().pid, "type": "vibrate", "ms": 150})
 	elif knocked == 0:
 		text = "GUTTER" if _gutter else "MISS"
 	else:
 		text = "%d PIN%s" % [knocked, "" if knocked == 1 else "S"]
 	score.add(knocked)
-	print("[bowling] %s  (knocked %d, total %d)" % [text, knocked, score.total()])
+	print("[bowling] %s: %s  (knocked %d, total %d)" % [player().name, text, knocked, score.total()])
 	hud.big_message(text, text.ends_with("!"))
 	state = State.RESULT
 	_state_t = 0.0
 
 
 func _next_roll() -> void:
-	if score.is_over():
-		state = State.OVER
-		Pad.pointer_visible = true
-		hud.show_final(score.total())
-		phone_message.emit({"type": "hint", "text": "Point and press A"})
+	if score.is_over() or score.current_frame() != _frame_before:
+		_next_player()
 		return
 	if score.pins_standing() == 10:
 		_full_rack()
@@ -306,6 +370,22 @@ func _next_roll() -> void:
 				p.remove()
 	ball.rolling = false
 	_enter_aim()
+
+
+func _next_player() -> void:
+	for k in range(1, roster.players.size() + 1):
+		var i := (cur + k) % roster.players.size()
+		if not scores[i].is_over():
+			cur = i
+			_start_turn()
+			return
+	# everyone has finished
+	state = State.OVER
+	roster.lock_to("")
+	Pad.pointer_visible = true
+	hud.show_results(scores, roster.players)
+	phone_message.emit({"to": "*", "type": "turn", "mine": true, "text": ""})
+	phone_message.emit({"to": "*", "type": "hint", "text": "Point and press A"})
 
 
 func _count_standing() -> int:
@@ -337,7 +417,7 @@ func _update_bowler(delta: float) -> void:
 		target = deg_to_rad(95.0) * minf(1.0, _follow_through * 2.0)
 	_arm = lerpf(_arm, target, 1.0 - exp(-delta * 25.0))
 	bowler.swing_angle = _arm
-	if state == State.AIM or state == State.SWING:
+	if state == State.AIM or state == State.SWING or state == State.TURN_INTRO:
 		ball.hold(bowler.hand_world + Vector3(0, -0.05, 0))
 
 
@@ -355,7 +435,7 @@ func _update_camera(delta: float) -> void:
 	var tl: Vector3
 	var k := 4.0
 	match state:
-		State.AIM, State.SWING, State.OVER:
+		State.TURN_INTRO, State.AIM, State.SWING, State.OVER:
 			tp = _aim_cam_pos()
 			tl = _aim_cam_look()
 			k = 6.0

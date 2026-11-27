@@ -2,7 +2,17 @@
 
 A motion-controlled sports game for Windows: your phone (iPhone or Android) is the controller. It runs fullscreen on a laptop or TV (720p, 1080p, 1440p and 4K). No app is needed on the phone: it opens a web page served by the game.
 
-**Available now: Bowling** (10 frames, real pin physics). Tennis, Golf and Baseball are placeholders in the menu.
+**Available now: Bowling** for **1–8 players** (10 frames, real pin physics). Tennis, Golf and Baseball are placeholders in the menu.
+
+## Multiplayer (bowling)
+
+- **Everyone scans the same QR code.** Each phone that joins becomes a player ("You are Player 2"). A phone keeps its slot if it briefly disconnects.
+- **Sharing a phone:** tap your name badge on the phone → **+ Add guest**. Guests take turns on that phone ("Pass the phone to Sam").
+- **Names:** typed on the phone (the name sheet opens when you join; tap your name badge to change it later). Defaults are "Player 1", "Player 2"…
+- **Lobby:** players appear as they join (up to 8). The host points at **Start** and presses A.
+- **Calibration:** every phone calibrates when it joins and again before every game.
+- **Turns:** each player bowls a full frame. A "MAYA'S TURN" banner appears; that player presses A when ready. Other phones show "Maya is bowling…" and their buttons are locked.
+- **Results:** ranked podium with scores and strikes → Play Again (same players) or Menu.
 
 ## Getting started
 
@@ -16,7 +26,7 @@ A motion-controlled sports game for Windows: your phone (iPhone or Android) is t
 4. Tap **Enable Motion** → **Allow**.
 5. **Calibration (always required):** hold the phone like a remote, point at the target on screen and press **A**. This is asked whenever the phone connects and before every game.
 
-Flow: Safety screen → Home → Title → Choose a sport → How to bowl (first time) → Calibration → Bowling.
+Flow: Safety screen → Home → Title → Choose a sport → Players lobby → How to bowl (first time) → Calibration (every phone) → Bowling.
 
 ## Phone controller
 

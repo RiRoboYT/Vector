@@ -201,6 +201,12 @@ var _solid_mats := {}
 
 ## Glassy see-through look while aiming so the lane stays visible:
 ## mostly clear with a soft white outline. strength 0 = solid.
+## Tint the glass bowler with the current player's colour.
+func set_ghost_tint(c: Color) -> void:
+	if _ghost_mat:
+		_ghost_mat.set_shader_parameter("tint", c.lerp(Color.WHITE, 0.45))
+
+
 func set_ghost(strength: float) -> void:
 	if _ghost_mat == null:
 		var sh := Shader.new()

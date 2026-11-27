@@ -1,10 +1,11 @@
 extends Node
-## VectorSports app: owns the phone connection and moves between screens.
-## Flow: Safety -> Home -> Title -> Sports menu -> Tutorial -> Calibration
-## (compulsory) -> Bowling. Calibration also pops up whenever a phone connects.
+## VectorSports app: owns the phone connections and moves between screens.
+## Flow: Safety -> Home -> Title -> Sports menu -> Lobby (players join) ->
+## Tutorial (first time) -> Calibration of every phone (compulsory) -> Bowling.
+## A phone that connects at any time is asked to calibrate too.
 
 var server: ControllerServer
-var motion: MotionInput
+var roster: Players
 var pad: Pad
 var sfx: Sfx
 
@@ -14,6 +15,7 @@ var _top: CanvasLayer
 var _screen: Node
 var _calib: CalibrationScreen
 var _calib_then: Callable
+var _keyboard_ok := false
 var _fade: ColorRect
 var _cursor: CursorView
 var _connect: ConnectCard
@@ -22,7 +24,8 @@ var _toast_t := 0.0
 
 var _ips: PackedStringArray = []
 var _ip_index := 0
-var _needs_calibration := false
+var _qr_tex: Texture2D
+var _url := ""
 var _tutorial_seen := false
 var _screen_hint := ""
 
@@ -31,17 +34,17 @@ func _ready() -> void:
 	_setup_display_scaling()
 	sfx = Sfx.new()
 	add_child(sfx)
-	motion = MotionInput.new()
-	add_child(motion)
 	pad = Pad.new()
-	pad.motion = motion
 	add_child(pad)
 	server = ControllerServer.new()
 	server.process_priority = -200
 	add_child(server)
+	roster = Players.new()
+	roster.server = server
+	add_child(roster)
 	server.message_received.connect(_on_message)
-	server.controller_connected.connect(_on_connected)
-	server.controller_disconnected.connect(_on_disconnected)
+	roster.phone_joined.connect(_on_phone_joined)
+	roster.phone_left.connect(_on_phone_left)
 
 	_ui = CanvasLayer.new()
 	_ui.layer = 10
@@ -87,8 +90,20 @@ func _ready() -> void:
 	match start:
 		"home": go_home()
 		"sports": go_sports()
+		"lobby": go_lobby()
 		"tutorial": go_tutorial()
-		"bowling": go_bowling()
+		"bowling":
+			roster.lobby_open = false
+			for arg in OS.get_cmdline_user_args(): # test helper: --test-players=A,B,C
+				if arg.begins_with("--test-players="):
+					for n in arg.get_slice("=", 1).split(","):
+						var tp := Players.Player.new()
+						tp.pid = "keyboard"
+						tp.name = n
+						tp.color = Players.COLORS[roster.players.size() % Players.COLORS.size()]
+						roster.players.append(tp)
+			roster.ensure_keyboard_player()
+			go_bowling()
 		_: go_safety()
 	_maybe_screenshot()
 
@@ -115,6 +130,7 @@ func go_safety() -> void:
 
 
 func go_home() -> void:
+	_open_lobby_state()
 	var s := HomeScreen.new()
 	s.done.connect(func(a):
 		if a == "exit":
@@ -131,73 +147,151 @@ func go_title() -> void:
 
 
 func go_sports() -> void:
+	_open_lobby_state()
 	var s := SportsMenu.new()
 	s.done.connect(func(a):
 		if a == "back":
 			go_home()
-		elif _tutorial_seen:
-			go_calibrate_then_bowl()
 		else:
-			go_tutorial())
+			go_lobby())
 	_switch(s)
+
+
+func go_lobby() -> void:
+	_open_lobby_state()
+	roster.prune_disconnected()
+	var s := LobbyScreen.new()
+	s.roster = roster
+	s.qr = _qr_tex
+	s.url = _url
+	s.done.connect(func(a):
+		if a == "back":
+			go_sports()
+		else:
+			_start_from_lobby())
+	_switch(s)
+
+
+func _open_lobby_state() -> void:
+	roster.lock_to("")
+	if not roster.lobby_open:
+		roster.lobby_open = true
+		roster.refresh()
+
+
+func _start_from_lobby() -> void:
+	roster.lobby_open = false
+	roster.ensure_keyboard_player()
+	roster.refresh()
+	if _tutorial_seen:
+		calibrate_all(go_bowling)
+	else:
+		go_tutorial()
 
 
 func go_tutorial() -> void:
 	var s := TutorialScreen.new()
 	s.done.connect(func(_a):
 		_tutorial_seen = true
-		go_calibrate_then_bowl())
+		calibrate_all(go_bowling))
 	_switch(s)
-
-
-## Calibration is compulsory before every game.
-func go_calibrate_then_bowl() -> void:
-	show_calibration(go_bowling)
 
 
 func go_bowling() -> void:
 	var g := BowlingGame.new()
-	g.motion = motion
+	g.roster = roster
 	g.finished.connect(func(a):
 		if a == "again":
-			go_calibrate_then_bowl()
+			calibrate_all(go_bowling)
 		else:
 			go_sports())
-	g.phone_message.connect(func(m):
-		if m.get("type") == "hint":
-			_screen_hint = str(m.get("text", ""))
-			if _calib:
-				return
-		server.send_json(m))
+	g.phone_message.connect(_route_game_message)
 	_switch(g)
 
 
-func show_calibration(then: Callable = Callable()) -> void:
+func _route_game_message(m: Dictionary) -> void:
+	var to := str(m.get("to", "*"))
+	var data := m.duplicate()
+	data.erase("to")
+	if to == "*":
+		server.broadcast(data)
+	else:
+		roster.send_to_phone(to, data)
+
+
+# ------------------------------------------------------------ calibration
+
+## Compulsory before every game: every connected phone calibrates in turn.
+func calibrate_all(then: Callable) -> void:
+	roster.reset_calibration()
+	_keyboard_ok = false
 	_calib_then = then
+	_next_calibration()
+
+
+func _next_calibration() -> void:
 	if _calib:
 		return
-	_calib = CalibrationScreen.new()
-	_calib.motion = motion
-	_calib.server = server
-	_calib.done.connect(_on_calibrated)
-	_overlay.add_child(_calib)
-	Pad.blocked = true
-	_send_hint(_calib.phone_hint)
-
-
-func _on_calibrated(_a: String) -> void:
-	_needs_calibration = false
-	Pad.blocked = false
-	if _calib:
-		_calib.queue_free()
-		_calib = null
-	server.send_json({"type": "status", "calibrated": true})
+	var queue := roster.phones_needing_calibration()
+	if not queue.is_empty():
+		_show_calibration(queue[0])
+		return
+	if _calib_then.is_valid() and not roster.any_connected() and not _keyboard_ok:
+		_show_calibration(null) # keyboard players confirm with Enter
+		return
 	var then := _calib_then
 	_calib_then = Callable()
+	Pad.blocked = false
 	if then.is_valid():
 		then.call()
 	else:
-		_send_hint(_screen_hint)
+		server.broadcast({"type": "hint", "text": _screen_hint})
+
+
+func _show_calibration(phone: Players.Phone) -> void:
+	_calib = CalibrationScreen.new()
+	_calib.roster = roster
+	_calib.phone = phone
+	_calib.done.connect(_on_calibrated)
+	_overlay.add_child(_calib)
+	Pad.blocked = true
+	if phone:
+		roster.set_active(phone.pid)
+		for ph in roster.connected_phones():
+			var mine := ph == phone
+			server.send_to(ph.cid, {"type": "turn", "mine": mine,
+				"text": "" if mine else "Waiting for %s to calibrate…" % roster.label_for_phone(phone.pid)})
+		roster.send_to_phone(phone.pid, {"type": "hint", "text": "Point at the target on screen and press A"})
+
+
+func _on_calibrated(action: String) -> void:
+	if _calib and _calib.phone == null and action == "ok":
+		_keyboard_ok = true
+	if _calib:
+		_calib.queue_free()
+		_calib = null
+	server.broadcast({"type": "turn", "mine": true, "text": ""})
+	_next_calibration()
+
+
+# ----------------------------------------------------------------- phones
+
+func _on_phone_joined(pid: String) -> void:
+	var mine := roster.players_of(pid)
+	toast(("%s joined!" % mine[0].name) if not mine.is_empty() else "Phone connected (game in progress)")
+	server.broadcast({"type": "hint", "text": _screen_hint})
+	_next_calibration()
+
+
+func _on_phone_left(pid: String) -> void:
+	var who := roster.label_for_phone(pid)
+	toast("%s's phone disconnected" % who)
+	if _screen is LobbyScreen:
+		roster.prune_disconnected()
+
+
+func _on_message(cid: int, msg: Dictionary) -> void:
+	roster.handle(cid, msg)
 
 
 func _switch(node: Node) -> void:
@@ -214,42 +308,9 @@ func _switch(node: Node) -> void:
 		if node is Screen:
 			_screen_hint = (node as Screen).phone_hint
 			if _calib == null:
-				_send_hint(_screen_hint))
+				server.broadcast({"type": "turn", "mine": true, "text": ""})
+				server.broadcast({"type": "hint", "text": _screen_hint}))
 	tw.tween_property(_fade, "color:a", 0.0, 0.25)
-
-
-# ----------------------------------------------------------------- phone
-
-func _on_connected() -> void:
-	motion.reset_connection()
-	_needs_calibration = true
-	toast("Phone connected!")
-
-
-func _on_disconnected() -> void:
-	motion.reset_connection()
-	Pad.release_all()
-	toast("Phone disconnected")
-
-
-func _on_message(msg: Dictionary) -> void:
-	match str(msg.get("type", "")):
-		"sensor":
-			motion.handle_sensor(msg)
-			if _needs_calibration and _calib == null and motion.has_data:
-				show_calibration()
-		"btn":
-			Pad.phone_button(str(msg.get("id", "")), bool(msg.get("down", false)))
-		"calibrate":
-			if motion.has_data:
-				motion.calibrate()
-				toast("Centered")
-		"recenter":
-			motion.recenter()
-
-
-func _send_hint(text: String) -> void:
-	server.send_json({"type": "hint", "text": text})
 
 
 func toast(text: String, secs := 2.0) -> void:
@@ -259,17 +320,22 @@ func toast(text: String, secs := 2.0) -> void:
 
 func _update_qr() -> void:
 	var ip := "127.0.0.1" if _ips.is_empty() else _ips[_ip_index]
-	var url := "https://%s:%d/" % [ip, ControllerServer.HTTPS_PORT]
+	_url = "https://%s:%d/" % [ip, ControllerServer.HTTPS_PORT]
 	server.redirect_host = ip
 	var others := PackedStringArray()
 	for i in _ips.size():
 		if i != _ip_index:
 			others.append(_ips[i])
-	_connect.set_qr(QRCode.encode(url).to_image(8, 2), url, others)
+	var img := QRCode.encode(_url).to_image(8, 2)
+	_qr_tex = ImageTexture.create_from_image(img)
+	_connect.set_qr(img, _url, others)
+	if _screen is LobbyScreen:
+		(_screen as LobbyScreen).qr = _qr_tex
+		(_screen as LobbyScreen).url = _url
 
 
 func _process(delta: float) -> void:
-	var connected := server.is_controller_connected()
+	var connected := roster.any_connected()
 	var on_bowling := _screen is BowlingGame
 	if _calib:
 		Pad.pointer_visible = false
@@ -278,7 +344,7 @@ func _process(delta: float) -> void:
 	elif on_bowling:
 		Pad.pointer_visible = (_screen as BowlingGame).state == BowlingGame.State.OVER
 	_cursor.visible = Pad.pointer_visible
-	_connect.want_visible = not connected
+	_connect.want_visible = not connected and not (_screen is LobbyScreen)
 	_connect.compact = not (_calib != null or _screen is SafetyScreen or _screen is HomeScreen)
 	if _screen is HomeScreen:
 		(_screen as HomeScreen).connected = connected
@@ -316,7 +382,7 @@ func _maybe_screenshot() -> void:
 	if path == "":
 		return
 	if wait_phone:
-		while not (server.is_controller_connected() and motion.has_data):
+		while not roster.any_connected():
 			await get_tree().process_frame
 	await get_tree().create_timer(delay).timeout
 	await RenderingServer.frame_post_draw
