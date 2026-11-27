@@ -190,6 +190,7 @@ func _process(delta: float) -> void:
 	_update_camera(delta)
 	Sfx.roll(ball.linear_velocity.length() if ball.rolling and ball.global_position.y > -0.15 and ball.global_position.z > -BowlingLane.DECK_END else 0.0)
 	hud.set_pins(_standing_mask())
+	hud.set_compact(state == State.AIM or state == State.SWING or state == State.ROLL)
 	_refresh_hud()
 	if Input.is_key_pressed(KEY_ESCAPE) and state != State.SWING:
 		finished.emit("menu")

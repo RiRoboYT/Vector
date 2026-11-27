@@ -21,6 +21,7 @@ var _again: PillButton
 var _menu: PillButton
 var _banner: Control
 var _banner_view: BannerView
+var _compact_target := 0.0
 
 
 func _ready() -> void:
@@ -116,6 +117,11 @@ func set_scores(scores: Array[BowlingScore], players: Array[Players.Player], cur
 	_canvas.cur = cur
 
 
+## Small single-row scorecard while aiming / rolling; full card otherwise.
+func set_compact(on: bool) -> void:
+	_compact_target = 1.0 if on else 0.0
+
+
 func turn_banner(name: String, color: Color, sub: String) -> void:
 	_banner_view.title = name.to_upper() + "'S TURN"
 	_banner_view.color = color
@@ -186,6 +192,7 @@ func _process(delta: float) -> void:
 	_flash.modulate.a = clampf(_flash_t / 0.3, 0.0, 1.0)
 	_speed_t -= delta
 	_speed.modulate.a = clampf(_speed_t / 0.5, 0.0, 1.0)
+	_canvas.compact = move_toward(_canvas.compact, _compact_target, delta * 4.0)
 	_canvas.queue_redraw()
 	if _banner.visible:
 		_banner_view.t += delta
@@ -205,6 +212,7 @@ class HudCanvas:
 	var scores: Array[BowlingScore] = []
 	var players: Array[Players.Player] = []
 	var cur := 0
+	var compact := 0.0 # 0 = full card, 1 = small single row
 
 	func _draw() -> void:
 		_draw_pins(Vector2(34, 28))
@@ -240,10 +248,18 @@ class HudCanvas:
 		var w := name_w + fw * 9 + tenth + tot_w
 		var n := scores.size()
 		var shown: Array[int] = []
-		for k in mini(n, 4):
-			shown.append((cur + k) % n if n > 4 else k)
-		var h := 26.0 + row_h * shown.size() + (22.0 if n > 4 else 0.0)
+		var small := compact > 0.5
+		if small:
+			shown.append(cur)
+		else:
+			for k in mini(n, 4):
+				shown.append((cur + k) % n if n > 4 else k)
+		var h := 26.0 + row_h * shown.size() + (22.0 if n > 4 and not small else 0.0)
 		var o := Vector2(size.x - w - 30, 26)
+		# shrink towards the top-right corner
+		var sc := lerpf(1.0, 0.7, ease(compact, -2.0))
+		var anchor := Vector2(size.x - 30 + 8, 26 - 8)
+		draw_set_transform(anchor * (1.0 - sc), 0.0, Vector2(sc, sc))
 		draw_style_box(UI.panel_style(Color(1, 1, 1, 0.92), UI.BORDER, 16, 2), Rect2(o - Vector2(8, 8), Vector2(w + 16, h + 16)))
 		# header
 		for f_i in 11:
@@ -298,9 +314,10 @@ class HudCanvas:
 					var fs := 22 if f_i == 10 else 17
 					var ts2 := f.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs)
 					draw_string(f, Vector2(x + (bw - 3 - ts2.x) * 0.5, y + row_h - 10), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, UI.INK_DARK)
-		if n > 4:
+		if n > 4 and not small:
 			var more := "+%d more players" % (n - 4)
 			draw_string(UI.regular(), Vector2(o.x + 4, o.y + h - 4), more, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UI.INK)
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 	func _col_x(x0: float, f_i: int, name_w: float, fw: float, tenth: float) -> float:
 		if f_i < 10:
