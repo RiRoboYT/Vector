@@ -22,6 +22,9 @@ const TURN_SPEED := deg_to_rad(5.0) # rad/s
 const MAX_X := 0.42
 const MAX_ANGLE := deg_to_rad(5.0)
 const MIN_FORWARD_RATE := 50.0 # deg/s: slower than this is not a throw
+const START_Z := 2.0 # where the bowler stands while aiming
+const FOUL_Z := 0.45 # where the approach ends (just behind the foul line)
+const APPROACH_TIME := 1.0 # seconds for the 3-step approach while swinging
 
 var roster: Players
 var lane: BowlingLane
@@ -59,6 +62,9 @@ var _spin_release_t := 0.0
 var _spin_accum := 0.0
 var _arm := 0.0 # displayed arm angle (rad)
 var _follow_through := 0.0
+var _approach := 0.0 # 0 = at the start spot, 1 = at the foul line
+var _post_t := 0.0 # time since release
+var _hand_off := 0.55 # sideways distance from the bowler's centre to the ball
 var _cam_pos := Vector3.ZERO
 var _cam_look := Vector3.ZERO
 
@@ -128,6 +134,9 @@ func _start_turn() -> void:
 	state = State.TURN_INTRO
 	_state_t = 0.0
 	_full_rack()
+	_approach = 0.0
+	_post_t = 0.0
+	bowler.set_ghost(1.0)
 	ball_x = _aims[cur].x
 	angle = _aims[cur].y
 	mode = Mode.MOVE
@@ -215,6 +224,8 @@ func _update_aim(delta: float) -> void:
 func _enter_aim() -> void:
 	state = State.AIM
 	_state_t = 0.0
+	_approach = 0.0
+	bowler.set_ghost(1.0)
 	ball.hold(bowler.hand_world)
 	_guides.visible = true
 	_follow_through = 0.0
@@ -228,6 +239,7 @@ func _enter_aim() -> void:
 func _start_swing() -> void:
 	state = State.SWING
 	_state_t = 0.0
+	bowler.set_ghost(0.0) # solid while bowling, like stepping up for real
 	_swing_angle = 0.0
 	_back_sign = 0.0
 	_keyboard_swing = Pad.instance_motion == null or not Pad.instance_motion.has_data
@@ -284,8 +296,10 @@ func _release() -> void:
 				_spin_accum += float(h[2]) / 60.0
 		_spin_pending = true
 		_spin_release_t = Time.get_ticks_msec()
-	var from := Vector3(bowler.hand_world.x, BowlingBall.RADIUS + 0.004, -0.12)
 	var dir := Basis(Vector3.UP, -angle) * Vector3.FORWARD
+	var line_x := ball_x + dir.x / maxf(absf(dir.z), 0.001) * (START_Z - 0.45 - minf(bowler.hand_world.z - 0.05, 0.6))
+	var from := Vector3(line_x, BowlingBall.RADIUS + 0.004, minf(bowler.hand_world.z - 0.05, 0.6))
+	_post_t = 0.0
 	ball.launch(from, dir * speed)
 	ball.spin = spin
 	_follow_through = 1.0
@@ -407,9 +421,46 @@ func _standing_mask() -> Array[bool]:
 # ---------------------------------------------------------------- visuals
 
 func _update_bowler(delta: float) -> void:
-	var base := Vector3(ball_x - 0.33, 0.0, 0.62)
-	bowler.position = base
+	# --- approach: 3 steps while swinging, finish the slide after release
+	var released := state == State.ROLL or state == State.SETTLE or state == State.RESULT or state == State.OVER
+	if state == State.SWING:
+		_approach = minf(1.0, _approach + delta / APPROACH_TIME)
+	elif released:
+		_approach = minf(1.0, _approach + delta * 4.0)
+		_post_t += delta
+	var p := ease(_approach, -1.6) # smooth start and stop
+	var dir := Basis(Vector3.UP, -angle) * Vector3.FORWARD
+	if state == State.AIM or state == State.TURN_INTRO:
+		# keep the ball (not the body) exactly on the aim line
+		var off := (bowler.hand_world - bowler.position).dot(Basis(Vector3.UP, -angle) * Vector3.RIGHT)
+		_hand_off = lerpf(_hand_off, off, 0.3)
+	var start := Vector3(ball_x, 0.0, START_Z) - (Basis(Vector3.UP, -angle) * Vector3.RIGHT) * _hand_off
+	bowler.position = start + dir * (START_Z - FOUL_Z) * p
 	bowler.rotation.y = -angle
+	var walking := state == State.SWING or (released and _approach < 1.0)
+	bowler.step_phase = _approach * 3.0 * PI # three steps
+	bowler.walk_amount = lerpf(bowler.walk_amount, 1.0 if walking and _approach < 0.9 else 0.0, 1.0 - exp(-delta * 10.0))
+	var lean_t := 0.0
+	var crouch_t := 0.0
+	var slide_t := 0.0
+	var arm_out := 0.0
+	if state == State.SWING:
+		lean_t = 0.28 * _approach
+		crouch_t = 0.07 * _approach
+		slide_t = clampf((_approach - 0.7) / 0.3, 0.0, 1.0) * 0.6
+		arm_out = _approach
+	elif released:
+		# hold the finish pose, then slowly stand up and watch the pins
+		var hold := clampf(1.0 - (_post_t - 1.2) / 1.0, 0.25, 1.0)
+		lean_t = 0.38 * hold
+		crouch_t = 0.11 * hold
+		slide_t = hold
+		arm_out = hold
+	var kk := 1.0 - exp(-delta * 9.0)
+	bowler.lean = lerpf(bowler.lean, lean_t, kk)
+	bowler.crouch = lerpf(bowler.crouch, crouch_t, kk)
+	bowler.slide = lerpf(bowler.slide, slide_t, kk)
+	bowler.balance_arm = lerpf(bowler.balance_arm, arm_out, kk)
 	var target := 0.0
 	if state == State.SWING:
 		target = deg_to_rad(clampf(-_back_sign * _swing_angle if _back_sign != 0.0 else -absf(_swing_angle) * 0.5, -100.0, 110.0))
@@ -418,17 +469,20 @@ func _update_bowler(delta: float) -> void:
 		target = deg_to_rad(95.0) * minf(1.0, _follow_through * 2.0)
 	_arm = lerpf(_arm, target, 1.0 - exp(-delta * 25.0))
 	bowler.swing_angle = _arm
+	if state == State.SWING and OS.has_environment("VS_DEBUG"):
+		print("[arm] swing_angle=%.0f back_sign=%.0f arm=%.0f hand=%s" % [_swing_angle, _back_sign, rad_to_deg(_arm), bowler.hand_world])
 	if state == State.AIM or state == State.SWING or state == State.TURN_INTRO:
 		ball.hold(bowler.hand_world + Vector3(0, -0.05, 0))
 
 
 func _aim_cam_pos() -> Vector3:
-	# low and close behind the bowler, lane running up the middle
-	return Vector3(ball_x - 0.12, 1.72, 2.75)
+	# behind the bowler, lane straight up the middle of the screen,
+	# bowler a little to the left so the pins stay visible
+	return Vector3(ball_x * 0.7 + 0.1, 1.9, START_Z + 2.5)
 
 
 func _aim_cam_look() -> Vector3:
-	return Vector3(ball_x - 0.12 + sin(angle) * 6.0, 0.55, -16.0)
+	return Vector3(ball_x * 0.35 + sin(angle) * 6.0, 0.2, -17.0)
 
 
 func _update_camera(delta: float) -> void:
@@ -469,14 +523,15 @@ func _build_guides() -> void:
 	red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	var line := Node3D.new()
 	line.name = "Line"
+	line.position.z = START_Z - 0.45 # starts at the bowler, pivots there
 	_guides.add_child(line)
-	for i in 20:
+	for i in 24:
 		var d := MeshInstance3D.new()
 		var bm := BoxMesh.new()
 		bm.size = Vector3(0.025, 0.002, 0.22)
 		d.mesh = bm
 		d.material_override = red
-		d.position = Vector3(0, 0.004, -0.2 - i * 0.42)
+		d.position = Vector3(0, 0.004, -i * 0.42)
 		line.add_child(d)
 	# straight arrows (Move mode)
 	_move_arrows = Node3D.new()
@@ -485,7 +540,7 @@ func _build_guides() -> void:
 		var a := MeshInstance3D.new()
 		a.mesh = _arrow_mesh(side)
 		a.material_override = red
-		a.position = Vector3(side * 0.42, 0.005, 0.15)
+		a.position = Vector3(side * 0.42, 0.005, START_Z - 0.3)
 		_move_arrows.add_child(a)
 	# curved arrows (Turn mode)
 	_turn_arrows = Node3D.new()

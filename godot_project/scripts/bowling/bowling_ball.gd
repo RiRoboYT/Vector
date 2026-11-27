@@ -31,26 +31,28 @@ func _init() -> void:
 	var sm := SphereMesh.new()
 	sm.radius = RADIUS
 	sm.height = RADIUS * 2
-	sm.radial_segments = 48
-	sm.rings = 24
+	sm.radial_segments = 72
+	sm.rings = 36
 	mi.mesh = sm
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = _swirl_texture()
-	m.roughness = 0.12
-	m.metallic_specular = 0.9
-	m.clearcoat_enabled = true
-	mi.material_override = m
+	mi.material_override = _marble_material()
 	add_child(mi)
-	# finger holes
-	for off in [Vector3(-0.022, 0.1, -0.03), Vector3(0.022, 0.1, -0.03), Vector3(0, 0.1, 0.04)]:
+	# finger holes: dark recessed discs sitting flush with the surface
+	var hole_mat := StandardMaterial3D.new()
+	hole_mat.albedo_color = Color("0b0f1a")
+	hole_mat.roughness = 0.9
+	for d in [Vector3(0.0, 0.93, 0.37), Vector3(-0.13, 0.975, -0.18), Vector3(0.13, 0.975, -0.18)]:
+		var n: Vector3 = d.normalized()
 		var h := MeshInstance3D.new()
 		var hm := CylinderMesh.new()
-		hm.top_radius = 0.012
-		hm.bottom_radius = 0.012
-		hm.height = 0.02
+		var r := 0.0125 if d.z > 0.0 else 0.0105
+		hm.top_radius = r
+		hm.bottom_radius = r
+		hm.height = 0.004
+		hm.radial_segments = 32
 		h.mesh = hm
-		h.material_override = BowlingLane._mat(Color("101420"), 0.8)
-		h.position = off
+		h.material_override = hole_mat
+		var x := n.cross(Vector3.FORWARD).normalized()
+		h.transform = Transform3D(Basis(x, n, x.cross(n)), n * (RADIUS - 0.0012))
 		add_child(h)
 	freeze_mode = RigidBody3D.FREEZE_MODE_KINEMATIC
 
@@ -85,14 +87,53 @@ func _physics_process(_delta: float) -> void:
 		apply_central_force(Vector3(push * mass, 0, 0))
 
 
-func _swirl_texture() -> ImageTexture:
-	var img := Image.create(128, 64, false, Image.FORMAT_RGB8)
-	for y in 64:
-		for x in 128:
-			var u := x / 128.0 * TAU
-			var v := y / 64.0 * PI
-			var swirl := sin(u * 3.0 + sin(v * 4.0) * 2.0 + cos(u) * 1.5)
-			var c := Color("1f6fd6").lerp(Color("57c3f2"), 0.5 + 0.5 * swirl)
-			img.set_pixel(x, y, c)
-	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+const MARBLE_SHADER := """
+shader_type spatial;
+render_mode specular_schlick_ggx;
+uniform vec3 deep : source_color = vec3(0.05, 0.22, 0.62);
+uniform vec3 mid : source_color = vec3(0.16, 0.55, 0.95);
+uniform vec3 light : source_color = vec3(0.62, 0.88, 1.0);
+varying vec3 opos;
+
+void vertex() {
+	opos = VERTEX * 19.0; // object space: swirl turns with the ball
+}
+
+float swirl(vec3 p) {
+	p += 0.9 * vec3(sin(p.y * 0.9 + p.z * 0.5), sin(p.z * 1.1 + p.x * 0.6), sin(p.x * 0.8 + p.y * 0.4));
+	p += 0.45 * vec3(sin(p.y * 2.1 + 1.3), sin(p.z * 1.9 + 2.1), sin(p.x * 2.3 + 0.7));
+	return sin(p.x * 1.2 + p.y * 0.8 + p.z * 1.0);
+}
+
+void fragment() {
+	float a = swirl(opos);
+	float b = swirl(opos * 1.6 + vec3(3.1, 1.7, 0.4));
+	float fine = swirl(opos * 3.3 + vec3(0.7, 2.2, 1.1));
+	vec3 c = mix(deep, mid, smoothstep(-0.5, 0.5, a));
+	c = mix(c, light, smoothstep(0.6, 0.92, b) * 0.85);
+	c = mix(c, deep * 0.7, smoothstep(0.75, 0.98, fine) * 0.5); // thin dark veins
+	ALBEDO = c;
+	// polished shell: soft reflection of the ceiling lights + edge sheen
+	vec3 r = reflect(-VIEW, NORMAL);
+	float lights = smoothstep(0.45, 0.85, r.y) * (0.6 + 0.4 * smoothstep(0.2, 0.5, abs(sin(r.x * 6.0))));
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	EMISSION = vec3(1.0, 0.98, 0.94) * lights * 0.22 + light * fres * 0.25;
+	ROUGHNESS = 0.07;
+	SPECULAR = 0.75;
+	CLEARCOAT = 1.0;
+	CLEARCOAT_ROUGHNESS = 0.03;
+	RIM = 0.15;
+	RIM_TINT = 0.6;
+}
+"""
+
+static var _marble: ShaderMaterial
+
+
+static func _marble_material() -> ShaderMaterial:
+	if _marble == null:
+		var sh := Shader.new()
+		sh.code = MARBLE_SHADER
+		_marble = ShaderMaterial.new()
+		_marble.shader = sh
+	return _marble

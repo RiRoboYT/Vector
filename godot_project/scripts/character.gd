@@ -19,6 +19,13 @@ var swing := 0.0
 var bowling := false
 var swing_angle := 0.0 # radians: 0 = arm hanging, >0 forward, <0 back
 var hand_world := Vector3.ZERO
+## Body animation (bowling approach), set by the game each frame.
+var step_phase := 0.0 # advances while walking (radians)
+var walk_amount := 0.0 # 0 = standing, 1 = full stride
+var lean := 0.0 # forward lean of the upper body (radians)
+var crouch := 0.0 # metres the body drops (knee bend)
+var slide := 0.0 # 0..1 release pose: front leg slides, back leg kicks back
+var balance_arm := 0.0 # 0..1 left arm swings out for balance
 
 var tip_world := Vector3.ZERO
 var tip_forward := Vector3.FORWARD
@@ -33,6 +40,12 @@ var _remote: Node3D
 var _tip_mat: StandardMaterial3D
 var _head: Node3D
 var _body: Node3D
+var _legs: Array[Node3D] = [] # hip pivots: [left, right]
+var _upper_l: MeshInstance3D
+var _fore_l: MeshInstance3D
+var _elbow_l: MeshInstance3D
+var _hand_l: Node3D
+const HIP_Y := 0.70
 var _time := 0.0
 var _face: Array[Node3D] = []
 
@@ -40,15 +53,19 @@ var _face: Array[Node3D] = []
 func _ready() -> void:
 	_body = Node3D.new()
 	add_child(_body)
-	# legs
+	# legs hang from hip pivots so they can step
 	for side in [-1.0, 1.0]:
-		var leg := _mesh(_capsule(0.085, 0.62), PANTS)
-		leg.position = Vector3(0.11 * side, 0.36, 0.0)
-		_body.add_child(leg)
+		var hip := Node3D.new()
+		hip.position = Vector3(0.11 * side, HIP_Y, 0.0)
+		add_child(hip)
+		_legs.append(hip)
+		var leg := _mesh(_capsule(0.085, 0.64), PANTS)
+		leg.position = Vector3(0, -0.32, 0)
+		hip.add_child(leg)
 		var shoe := _mesh(_sphere(0.1), Color(0.95, 0.95, 0.97))
 		shoe.scale = Vector3(1.0, 0.55, 1.45)
-		shoe.position = Vector3(0.11 * side, 0.06, -0.04)
-		_body.add_child(shoe)
+		shoe.position = Vector3(0, -0.64, -0.04)
+		hip.add_child(shoe)
 	# torso: slim, sporty polo
 	var torso := _mesh(_capsule(0.215, 0.74), SHIRT)
 	torso.scale = Vector3(1.08, 1.0, 0.82)
@@ -111,14 +128,19 @@ func _ready() -> void:
 	_head.add_child(smile)
 	_face.append(smile)
 
-	# resting left arm
-	var la_end := _shoulder_l + Vector3(-0.08, -0.55, 0.03)
-	var la_mid := _shoulder_l + Vector3(-0.07, -0.29, 0.06)
-	_body.add_child(_segment(_shoulder_l, la_mid, 0.065, SHIRT))
-	_body.add_child(_segment(la_mid, la_end, 0.055, SKIN))
-	var lh := _mesh(_sphere(0.07), SKIN)
-	lh.position = la_end
-	_body.add_child(lh)
+	# left arm (IK too, for balance poses)
+	var shoulder_l := _mesh(_sphere(0.08), SHIRT)
+	shoulder_l.position = _shoulder_l
+	_body.add_child(shoulder_l)
+	_upper_l = _mesh(_capsule(0.065, UPPER + 0.1), SHIRT)
+	_fore_l = _mesh(_capsule(0.055, FORE + 0.08), SKIN)
+	_elbow_l = _mesh(_sphere(0.064), SKIN)
+	_body.add_child(_upper_l)
+	_body.add_child(_fore_l)
+	_body.add_child(_elbow_l)
+	_hand_l = Node3D.new()
+	_body.add_child(_hand_l)
+	_hand_l.add_child(_mesh(_sphere(0.07), SKIN))
 
 	# right (controlled) arm
 	var shoulder_ball := _mesh(_sphere(0.08), SHIRT)
@@ -154,21 +176,39 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	_time += delta
-	# breathing idle
-	_body.position.y = sin(_time * 2.2) * 0.008
+	# upper body: breathing, walking bob, knee bend and forward lean around the hips
+	var bob := sin(_time * 2.2) * 0.008 + absf(sin(step_phase)) * 0.035 * walk_amount
+	var pivot := Vector3(0, HIP_Y, 0)
+	var lb := Basis(Vector3.RIGHT, -lean)
+	_body.transform = Transform3D(lb, pivot - lb * pivot + Vector3(0, bob - crouch, 0))
+	# legs: alternate steps, then slide / kick-back pose at release
+	var stride := sin(step_phase) * 0.5 * walk_amount
+	_legs[0].rotation.x = stride + slide * 0.55 # left leg forward
+	_legs[1].rotation.x = -stride - slide * 0.75 # right leg back
+	for leg in _legs:
+		leg.position.y = HIP_Y + bob - crouch
+	_legs[0].position.z = -crouch * 0.6
+	_legs[1].position.z = -crouch * 0.6
+
+	# left arm: hangs, swings with the steps, reaches out for balance
+	var rest_l := _shoulder_l + Vector3(-0.08, -0.55, 0.03 + sin(step_phase) * 0.12 * walk_amount)
+	var out_l := _shoulder_l + Vector3(-0.5, -0.22, -0.12)
+	_solve_limb(_body.transform * rest_l.lerp(out_l, balance_arm), _shoulder_l, _upper_l, _fore_l, _elbow_l, _hand_l, Vector3(-1.0, 0.0, 0.2))
 
 	if bowling:
+		# swing angle is relative to gravity, so it stays true while leaning
 		var dir_b := Basis(Vector3.RIGHT, swing_angle - PI * 0.5) * Vector3.FORWARD
-		_solve_arm(_shoulder_r + Vector3(0.06, 0.0, 0.0) + dir_b * (UPPER + FORE) * 0.97, Vector3(1.0, 0.0, 0.15))
+		var sh := _body.transform * _shoulder_r
+		_solve_limb(sh + Vector3(0.06, 0.0, 0.0) + dir_b * (UPPER + FORE) * 0.97, _shoulder_r, _upper_r, _fore_r, _elbow_r, _hand_r, Vector3(1.0, 0.0, 0.15))
 		_remote.visible = false
-		_head.rotation = Vector3(0.12, 0, 0)
+		_head.rotation = Vector3(0.12 + lean * 0.4, 0, 0)
 		hand_world = _hand_r.global_position
 		return
 	_remote.visible = true
 	var aim := Basis(Vector3.UP, -aim_yaw) * Basis(Vector3.RIGHT, aim_pitch)
 	var dir := aim * Vector3.FORWARD
-	var target := _shoulder_r + Vector3(0.04, 0.0, 0.0) + dir * (UPPER + FORE) * 0.9
-	_solve_arm(target)
+	var target := _body.transform * _shoulder_r + Vector3(0.04, 0.0, 0.0) + dir * (UPPER + FORE) * 0.9
+	_solve_limb(target, _shoulder_r, _upper_r, _fore_r, _elbow_r, _hand_r, Vector3(0.6, -1.0, 0.35))
 
 	# remote follows the full calibrated phone rotation
 	var full := aim * Basis(Vector3.BACK, -aim_roll)
@@ -186,8 +226,8 @@ const GHOST_SHADER := """
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_always, cull_back, shadows_disabled;
 uniform vec3 tint : source_color = vec3(0.82, 0.93, 1.0);
-uniform float base_alpha = 0.10;
-uniform float rim_alpha = 0.6;
+uniform float base_alpha = 0.05;
+uniform float rim_alpha = 0.42;
 void fragment() {
 	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.2);
 	ALBEDO = mix(tint, vec3(1.0), rim);
@@ -226,30 +266,35 @@ func set_ghost(strength: float) -> void:
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if on else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
-func _solve_arm(target: Vector3, pole_hint := Vector3(0.6, -1.0, 0.35)) -> void:
-	var s := _shoulder_r + _body.position
-	var to_t := target - s
+## Two-bone IK. `target` is in character space; the limb lives in _body
+## space (so it follows the lean). Shoulder is given in _body space.
+func _solve_limb(target: Vector3, shoulder: Vector3, upper: MeshInstance3D, fore: MeshInstance3D,
+		elbow_mi: MeshInstance3D, hand_node: Node3D, pole_hint: Vector3) -> void:
+	var inv := _body.transform.affine_inverse()
+	var t := inv * target
+	var to_t := t - shoulder
 	var d := clampf(to_t.length(), 0.05, UPPER + FORE - 0.001)
 	var axis := to_t.normalized()
 	var cos_a := (UPPER * UPPER + d * d - FORE * FORE) / (2.0 * UPPER * d)
 	var sin_a := sqrt(maxf(0.0, 1.0 - cos_a * cos_a))
-	var pole := pole_hint
-	pole = (pole - axis * pole.dot(axis)).normalized()
-	var elbow := s + axis * UPPER * cos_a + pole * UPPER * sin_a
-	var hand := s + axis * d
-	_place(_upper_r, s, elbow)
-	_place(_fore_r, elbow, hand)
-	_elbow_r.position = elbow - _body.position
-	_hand_r.position = hand - _body.position
+	var pole := inv.basis * pole_hint
+	pole = pole - axis * pole.dot(axis)
+	pole = pole.normalized() if pole.length() > 0.001 else Vector3.RIGHT
+	var elbow := shoulder + axis * UPPER * cos_a + pole * UPPER * sin_a
+	var hand := shoulder + axis * d
+	_place(upper, shoulder, elbow)
+	_place(fore, elbow, hand)
+	elbow_mi.position = elbow
+	hand_node.position = hand
 
 
-# Positions a Y-aligned capsule between two points (local to _body).
+# Positions a Y-aligned capsule between two points (in its parent's space).
 func _place(mi: MeshInstance3D, a: Vector3, b: Vector3) -> void:
 	var y := (b - a).normalized()
 	var ref := Vector3.FORWARD if absf(y.dot(Vector3.FORWARD)) < 0.95 else Vector3.RIGHT
 	var x := ref.cross(y).normalized()
 	var z := x.cross(y)
-	mi.transform = Transform3D(Basis(x, y, z), (a + b) * 0.5 - _body.position)
+	mi.transform = Transform3D(Basis(x, y, z), (a + b) * 0.5)
 
 
 func _segment(a: Vector3, b: Vector3, r: float, c: Color) -> MeshInstance3D:

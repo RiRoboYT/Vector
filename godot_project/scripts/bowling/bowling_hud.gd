@@ -283,7 +283,15 @@ class HudCanvas:
 			var p: Players.Player = players[pi]
 			var is_cur := pi == cur
 			if is_cur:
-				draw_style_box(UI.panel_style(Color(p.color, 0.16), Color(p.color, 0.9), 10, 2), Rect2(Vector2(o.x - 4, y - 1), Vector2(w + 8, row_h - 2)))
+				# soft tinted row + accent bar, kept inside the card
+				var hl := StyleBoxFlat.new()
+				hl.bg_color = Color(p.color, 0.18)
+				hl.set_corner_radius_all(8)
+				draw_style_box(hl, Rect2(Vector2(o.x - 2, y - 1), Vector2(w - 1, row_h - 2)))
+				var bar := StyleBoxFlat.new()
+				bar.bg_color = p.color
+				bar.set_corner_radius_all(3)
+				draw_style_box(bar, Rect2(Vector2(o.x - 2, y + 4), Vector2(5, row_h - 12)))
 			draw_circle(Vector2(o.x + 12, y + row_h * 0.5 - 1), 8, p.color)
 			draw_string(f, Vector2(o.x + 26, y + row_h * 0.5 + 6), p.name.left(9), HORIZONTAL_ALIGNMENT_LEFT, name_w - 30, 18, UI.INK_DARK)
 			var marks := s.marks()
