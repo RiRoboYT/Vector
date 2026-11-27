@@ -13,6 +13,9 @@ extends Node
 ##   * "Camera":  phone upright, back camera points at the laptop.
 
 signal calibrated_changed(is_calibrated: bool)
+## Raw gyro sample in deg/s around the phone's own axes:
+## x = across the screen (arm swing), y = along the phone (wrist twist).
+signal gyro_sample(t_ms: float, rate_x: float, rate_y: float)
 
 enum Grip { REMOTE, CAMERA }
 
@@ -30,6 +33,7 @@ var has_data := false
 # raw values for the debug panel
 var raw_orientation := Vector3.ZERO # alpha, beta, gamma (degrees)
 var raw_accel := Vector3.ZERO # m/s^2, gravity removed
+var raw_gyro := Vector3.ZERO # deg/s around device x, y, z
 var raw_yaw := 0.0
 var raw_pitch := 0.0
 var raw_roll := 0.0
@@ -53,6 +57,9 @@ func handle_sensor(msg: Dictionary) -> void:
 	var a = msg.get("accel")
 	if a is Dictionary:
 		raw_accel = Vector3(float(a.get("x", 0.0)), float(a.get("y", 0.0)), float(a.get("z", 0.0)))
+	var g = msg.get("gyro")
+	if g is Dictionary and g.get("beta") != null:
+		raw_gyro = Vector3(float(g.get("beta", 0.0)), float(g.get("gamma", 0.0)), float(g.get("alpha", 0.0)))
 	if msg.has("rtt"):
 		latency_ms = float(msg.rtt) * 0.5
 
@@ -65,6 +72,8 @@ func handle_sensor(msg: Dictionary) -> void:
 	if not has_data:
 		has_data = true
 	_apply(dt)
+	if g is Dictionary:
+		gyro_sample.emit(t, raw_gyro.x, raw_gyro.y)
 
 
 ## Calibrate everything to the current grip (call while user holds neutral).
