@@ -22,17 +22,17 @@ var caption := ""
 var hovered := false
 var radius := 28.0
 
-var _viewport: LanePreview
+var _viewport: SubViewport
 var _view: TextureRect
 var _overlay: Overlay
 var _mat: ShaderMaterial
 
 
-func _init(p_logo := false, p_caption := "") -> void:
+func _init(p_logo := false, p_caption := "", kind := "bowling") -> void:
 	show_logo = p_logo
 	caption = p_caption
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_viewport = LanePreview.new()
+	_viewport = CricketPreview.new() if kind == "cricket" else LanePreview.new()
 	add_child(_viewport)
 	_view = TextureRect.new()
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -54,6 +54,9 @@ func _ready() -> void:
 
 
 func _process(_d: float) -> void:
+	# only render while shown
+	_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS if is_visible_in_tree() else SubViewport.UPDATE_DISABLED
+	_viewport.process_mode = Node.PROCESS_MODE_INHERIT if is_visible_in_tree() else Node.PROCESS_MODE_DISABLED
 	_view.position = Vector2.ZERO
 	_view.size = size
 	_overlay.position = Vector2.ZERO

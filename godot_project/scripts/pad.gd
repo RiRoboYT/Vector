@@ -8,6 +8,8 @@ const A := "A"
 const B := "B"
 const LEFT := "L"
 const RIGHT := "R"
+const UP := "U"
+const DOWN := "D"
 
 static var pointer := Vector2(640, 360)
 static var pointer_visible := true
@@ -113,6 +115,10 @@ func _input(event: InputEvent) -> void:
 				id = LEFT
 			KEY_RIGHT:
 				id = RIGHT
+			KEY_UP:
+				id = UP
+			KEY_DOWN:
+				id = DOWN
 		if id != "":
 			if id == A and event.pressed:
 				last_a_from_keyboard = true

@@ -8,6 +8,11 @@ const UPPER := 0.30
 const FORE := 0.29
 const SKIN := Color(1.0, 0.84, 0.7)
 const SHIRT := Color(0.16, 0.62, 0.9)
+## Set before adding to the tree to dress the character in team colours.
+var shirt := SHIRT
+var pants := Color(0.22, 0.25, 0.36)
+## Cast shadows (turn off for distant crowd-like figures to save GPU).
+var shadows := true
 const PANTS := Color(0.22, 0.25, 0.36)
 
 var aim_yaw := 0.0
@@ -26,6 +31,12 @@ var lean := 0.0 # forward lean of the upper body (radians)
 var crouch := 0.0 # metres the body drops (knee bend)
 var slide := 0.0 # 0..1 release pose: front leg slides, back leg kicks back
 var balance_arm := 0.0 # 0..1 left arm swings out for balance
+## Two-handed holding (cricket bat, catching): hands reach these world points.
+var hand_targets := false
+var hand_r_world := Vector3.ZERO
+var hand_l_world := Vector3.ZERO
+var head_turn := 0.0 # head yaw (radians), e.g. to watch the ball
+var head_tilt := 0.0
 
 var tip_world := Vector3.ZERO
 var tip_forward := Vector3.FORWARD
@@ -59,7 +70,7 @@ func _ready() -> void:
 		hip.position = Vector3(0.11 * side, HIP_Y, 0.0)
 		add_child(hip)
 		_legs.append(hip)
-		var leg := _mesh(_capsule(0.085, 0.64), PANTS)
+		var leg := _mesh(_capsule(0.085, 0.64), pants)
 		leg.position = Vector3(0, -0.32, 0)
 		hip.add_child(leg)
 		var shoe := _mesh(_sphere(0.1), Color(0.95, 0.95, 0.97))
@@ -67,7 +78,7 @@ func _ready() -> void:
 		shoe.position = Vector3(0, -0.64, -0.04)
 		hip.add_child(shoe)
 	# torso: slim, sporty polo
-	var torso := _mesh(_capsule(0.215, 0.74), SHIRT)
+	var torso := _mesh(_capsule(0.215, 0.74), shirt)
 	torso.scale = Vector3(1.08, 1.0, 0.82)
 	torso.position = Vector3(0, 1.08, 0)
 	_body.add_child(torso)
@@ -129,10 +140,10 @@ func _ready() -> void:
 	_face.append(smile)
 
 	# left arm (IK too, for balance poses)
-	var shoulder_l := _mesh(_sphere(0.08), SHIRT)
+	var shoulder_l := _mesh(_sphere(0.08), shirt)
 	shoulder_l.position = _shoulder_l
 	_body.add_child(shoulder_l)
-	_upper_l = _mesh(_capsule(0.065, UPPER + 0.1), SHIRT)
+	_upper_l = _mesh(_capsule(0.065, UPPER + 0.1), shirt)
 	_fore_l = _mesh(_capsule(0.055, FORE + 0.08), SKIN)
 	_elbow_l = _mesh(_sphere(0.064), SKIN)
 	_body.add_child(_upper_l)
@@ -143,10 +154,10 @@ func _ready() -> void:
 	_hand_l.add_child(_mesh(_sphere(0.07), SKIN))
 
 	# right (controlled) arm
-	var shoulder_ball := _mesh(_sphere(0.08), SHIRT)
+	var shoulder_ball := _mesh(_sphere(0.08), shirt)
 	shoulder_ball.position = _shoulder_r
 	_body.add_child(shoulder_ball)
-	_upper_r = _mesh(_capsule(0.065, UPPER + 0.1), SHIRT)
+	_upper_r = _mesh(_capsule(0.065, UPPER + 0.1), shirt)
 	_fore_r = _mesh(_capsule(0.055, FORE + 0.08), SKIN)
 	_elbow_r = _mesh(_sphere(0.064), SKIN)
 	_body.add_child(_upper_r)
@@ -172,6 +183,9 @@ func _ready() -> void:
 	_tip_mat.emission_energy_multiplier = 1.0
 	tip.position = Vector3(0, 0.02, -0.195)
 	_remote.add_child(tip)
+	if not shadows:
+		for mi in find_children("*", "MeshInstance3D", true, false):
+			(mi as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 func _process(delta: float) -> void:
@@ -194,6 +208,14 @@ func _process(delta: float) -> void:
 	var rest_l := _shoulder_l + Vector3(-0.08, -0.55, 0.03 + sin(step_phase) * 0.12 * walk_amount)
 	var out_l := _shoulder_l + Vector3(-0.5, -0.22, -0.12)
 	_solve_limb(_body.transform * rest_l.lerp(out_l, balance_arm), _shoulder_l, _upper_l, _fore_l, _elbow_l, _hand_l, Vector3(-1.0, 0.0, 0.2))
+
+	if hand_targets:
+		_solve_limb(to_local(hand_r_world), _shoulder_r, _upper_r, _fore_r, _elbow_r, _hand_r, Vector3(1.0, -0.6, 0.6))
+		_solve_limb(to_local(hand_l_world), _shoulder_l, _upper_l, _fore_l, _elbow_l, _hand_l, Vector3(-1.0, -0.6, 0.6))
+		_remote.visible = false
+		_head.rotation = Vector3(head_tilt + lean * 0.3, head_turn, 0)
+		hand_world = _hand_r.global_position
+		return
 
 	if bowling:
 		# swing angle is relative to gravity, so it stays true while leaning

@@ -2,7 +2,44 @@
 
 A motion-controlled sports game for Windows: your phone (iPhone or Android) is the controller. It runs fullscreen on a laptop or TV (720p, 1080p, 1440p and 4K). No app is needed on the phone: it opens a web page served by the game.
 
-**Available now: Bowling** for **1–8 players** (10 frames, real pin physics). Tennis, Golf and Baseball are placeholders in the menu.
+**Available now: Bowling** (1–8 players, 10 frames, real pin physics) and **Cricket** (1–8 players, Super Over / 2 / 5 overs, real ball, bat and fielding physics). Tennis, Golf and Baseball are placeholders in the menu.
+
+## Cricket
+
+Formats: **Super Over** (6 balls each, 2 wickets), **2 overs** (3 wickets) or **5 overs** (5 wickets). Play against the computer (Easy / Medium / Hard) or against each other: players are split into Blue and Orange teams.
+
+Each ball:
+1. **Batter takes guard:** ◀ ▶ moves across the crease. Hold the phone like the bat handle (screen facing the TV) and **tap B** when ready. This sets the bat's starting position.
+2. **Bowler sets the field:** the minimap opens. ▲ ▼ ◀ ▶ choose a fielder, **A** picks up or drops, then move them. **B** when done. Real restrictions apply: **powerplay overs** (first 30%) allow **max 2 fielders outside the 30-yard circle**, other overs max 5.
+3. **Bowler aims:** ◀ ▶ line, ▲ ▼ length (marker on the pitch), **A** switches Fast / Medium / Spin.
+4. **Bowler bowls:** hold **B** to run in, swing the arm over and **let go of B**. Arm speed sets the pace (Fast 125–150 km/h, Medium 105–125, Spin 72–92). Wrist twist gives swing or spin.
+5. **Batter swings:** the bat copies the phone's rotation 1:1. Timing, bat speed and face angle decide the shot.
+6. **Fielding and running are automatic:** fielders chase, catch (or drop), gather and throw, and batters judge their runs.
+
+**Outs:** bowled, caught (including edges to the keeper), run out. **Extras:** wides. LBW and no-balls are not in this version.
+
+**Split screen:** when the batter and the bowler are both people, the TV splits: bowler's view on the left, batter's view on the right.
+
+**Left-handers:** in the phone's names sheet, tap *Right-handed* to switch each player to *Left-handed*.
+
+### Cricket physics
+- **Ball** ([`cricket_ball.gd`](godot_project/scripts/cricket/cricket_ball.gd)), stepped at 480 Hz:
+  - gravity and quadratic air drag (Cd ≈ 0.37)
+  - swing force before the ball pitches
+  - bounce with different restitution and friction on the pitch and the outfield
+  - spin turn off the pitch, and rolling friction on grass
+  - checked by [`tests/test_cricket_ball.gd`](godot_project/tests/test_cricket_ball.gd): a 140 km/h ball reaches the batter in 0.52 s, a 38 m/s lofted hit carries 71 m for six, a 25 m/s drive rolls for four
+- **Bat** ([`bat.gd`](godot_project/scripts/cricket/bat.gd)):
+  - real dimensions
+  - swept collision (continuous, so fast swings can't pass through the ball)
+  - 1-D impact along the contact normal, using the bat's effective mass and restitution at that point of the blade (sweet spot about 15 cm from the toe; edges and handle are dead)
+  - checked by [`tests/test_cricket_bat.gd`](godot_project/tests/test_cricket_bat.gd): timed well = 102 km/h along the ground, early = popped up, late = slower
+- **Stumps and bails** are Jolt physics bodies that fly when the wicket is broken.
+- **Fielding** ([`cricket_play.gd`](godot_project/scripts/cricket/cricket_play.gd)):
+  - fielders predict the ball's path and the quickest one sprints to cut it off
+  - catches depend on reach and pace
+  - throws are aimed (with drag) at the keeper or bowler, or at the stumps for a run-out
+  - the keeper stands back for pace and up for spin
 
 ## Multiplayer (bowling)
 
@@ -84,6 +121,9 @@ Run the tests:
 cd godot_project
 godot --headless -s tests/test_score.gd
 godot --headless -s tests/test_physics.gd
+godot --headless -s tests/test_cricket_ball.gd
+godot --headless -s tests/test_cricket_bat.gd
+godot --headless --fixed-fps 60 -s tests/test_cricket_human.gd
 ```
 
 Font: M PLUS Rounded 1c (SIL Open Font License, see `godot_project/fonts/LICENSE.txt`).

@@ -6,22 +6,26 @@ var buttons: Array[PillButton] = []
 var back_btn: PillButton
 var _preview := "Bowling"
 var card: PreviewCard
+var cricket_card: PreviewCard
 
 
 func _init() -> void:
 	super()
-	var names := [["Bowling", true], ["Tennis", false], ["Golf", false], ["Baseball", false]]
+	var names := [["Bowling", true], ["Cricket", true], ["Tennis", false], ["Golf", false], ["Baseball", false]]
 	for n in names:
-		var b := PillButton.new(n[0], Vector2(330, 84))
+		var b := PillButton.new(n[0], Vector2(330, 76))
 		b.enabled = n[1]
 		b.badge = "" if n[1] else "Soon"
-		b.font_size = 32
+		b.font_size = 30
 		if n[1]:
-			b.pressed.connect(func(): done.emit("bowling"))
+			var sport := str(n[0]).to_lower()
+			b.pressed.connect(func(): done.emit(sport))
 		add_child(b)
 		buttons.append(b)
-	card = PreviewCard.new(false, "Bowling  ·  1 player  ·  10 frames")
+	card = PreviewCard.new(false, "Bowling  ·  1–8 players  ·  10 frames")
 	add_child(card)
+	cricket_card = PreviewCard.new(false, "Cricket  ·  1–8 players  ·  Super Over / 2 / 5 overs", "cricket")
+	add_child(cricket_card)
 	back_btn = PillButton.new("Back", Vector2(170, 66))
 	back_btn.font_size = 26
 	back_btn.pressed.connect(func(): done.emit("back"))
@@ -31,16 +35,21 @@ func _init() -> void:
 func _process(delta: float) -> void:
 	super(delta)
 	for i in buttons.size():
-		buttons[i].position = Vector2(70, 170 + i * 108)
+		buttons[i].position = Vector2(70, 150 + i * 92)
 		if buttons[i].hovered:
 			_preview = buttons[i].text
 	back_btn.position = Vector2(70, size.y - 100)
-	card.position = Vector2(470, 160)
-	card.size = Vector2(size.x - 540, size.y - 300)
-	var soon := _preview != "Bowling"
-	card.caption = (_preview + "  ·  coming soon") if soon else "Bowling  ·  1 player  ·  10 frames"
+	for c in [card, cricket_card]:
+		c.position = Vector2(470, 160)
+		c.size = Vector2(size.x - 540, size.y - 300)
+	var is_cricket := _preview == "Cricket"
+	cricket_card.visible = is_cricket
+	card.visible = not is_cricket
+	var soon := _preview != "Bowling" and _preview != "Cricket"
+	card.caption = (_preview + "  ·  coming soon") if soon else "Bowling  ·  1–8 players  ·  10 frames"
 	card.modulate = Color(0.78, 0.78, 0.8) if soon else Color.WHITE
 	card.hovered = buttons[0].hovered
+	cricket_card.hovered = buttons[1].hovered
 
 
 func _draw() -> void:

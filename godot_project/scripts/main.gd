@@ -27,6 +27,7 @@ var _ip_index := 0
 var _qr_tex: Texture2D
 var _url := ""
 var _tutorial_seen := false
+var _cricket_tutorial_seen := false
 var _screen_hint := ""
 
 
@@ -92,6 +93,9 @@ func _ready() -> void:
 		"sports": go_sports()
 		"lobby": go_lobby()
 		"tutorial": go_tutorial()
+		"cricket":
+			roster.lobby_open = false
+			go_cricket()
 		"bowling":
 			roster.lobby_open = false
 			for arg in OS.get_cmdline_user_args(): # test helper: --test-players=A,B,C
@@ -153,22 +157,53 @@ func go_sports() -> void:
 		if a == "back":
 			go_home()
 		else:
-			go_lobby())
+			go_lobby(a))
 	_switch(s)
 
 
-func go_lobby() -> void:
+func go_lobby(sport := "bowling") -> void:
 	_open_lobby_state()
 	roster.prune_disconnected()
 	var s := LobbyScreen.new()
 	s.roster = roster
 	s.qr = _qr_tex
 	s.url = _url
+	s.sport = sport.capitalize()
 	s.done.connect(func(a):
 		if a == "back":
 			go_sports()
+		elif sport == "cricket":
+			roster.lobby_open = false
+			roster.ensure_keyboard_player()
+			roster.refresh()
+			go_cricket_options()
 		else:
 			_start_from_lobby())
+	_switch(s)
+
+
+func go_cricket_options() -> void:
+	var s := CricketOptions.new()
+	s.roster = roster
+	s.done.connect(func(a):
+		if a == "back":
+			go_lobby("cricket")
+			return
+		var o: int = s.overs
+		var so: bool = s.super_over
+		var d: int = s.difficulty
+		var start := func(): calibrate_all(func(): go_cricket(o, so, d))
+		if _cricket_tutorial_seen:
+			start.call()
+		else:
+			var t := TutorialScreen.new()
+			t.pages = TutorialScreen.CRICKET
+			t.title = "How to play cricket"
+			t.finish_text = "Let's play!"
+			t.done.connect(func(_x):
+				_cricket_tutorial_seen = true
+				start.call())
+			_switch(t))
 	_switch(s)
 
 
@@ -203,6 +238,25 @@ func go_bowling() -> void:
 	g.finished.connect(func(a):
 		if a == "again":
 			calibrate_all(go_bowling)
+		else:
+			go_sports())
+	g.phone_message.connect(_route_game_message)
+	_switch(g)
+
+
+func go_cricket(overs := 1, super_over := true, difficulty := 1) -> void:
+	var g := CricketGame.new()
+	g.roster = roster
+	g.overs = overs
+	g.super_over = super_over
+	g.difficulty = difficulty
+	for arg in OS.get_cmdline_user_args(): # test helpers
+		if arg.begins_with("--overs="):
+			g.overs = int(arg.get_slice("=", 1))
+			g.super_over = false
+	g.finished.connect(func(a):
+		if a == "again":
+			calibrate_all(func(): go_cricket(overs, super_over, difficulty))
 		else:
 			go_sports())
 	g.phone_message.connect(_route_game_message)
@@ -343,6 +397,8 @@ func _process(delta: float) -> void:
 		Pad.pointer_visible = (_screen as Screen).wants_pointer
 	elif on_bowling:
 		Pad.pointer_visible = (_screen as BowlingGame).state == BowlingGame.State.OVER
+	elif _screen is CricketGame:
+		Pad.pointer_visible = (_screen as CricketGame).phase == CricketGame.Phase.OVER
 	_cursor.visible = Pad.pointer_visible
 	_connect.want_visible = not connected and not (_screen is LobbyScreen)
 	_connect.compact = not (_calib != null or _screen is SafetyScreen or _screen is HomeScreen)

@@ -79,6 +79,7 @@
     display: inline-flex; align-items: center; justify-content: center; flex: none; }
   .slot input { flex: 1; min-width: 0; font: inherit; font-size: 20px; font-weight: 700; border: 0; outline: 0; background: none;
     color: var(--ink); -webkit-user-select: text; user-select: text; }
+  .slot .hand { background: #e4f4fb; color: var(--blue-dark); }
   .slot button { border: 0; background: #f3d7d7; color: var(--red); font-weight: 800; border-radius: 12px; padding: 8px 10px; font-family: inherit; }
   .sheet-btns { display: flex; gap: 10px; }
   .sheet-btns button { flex: 1; font-family: inherit; font-weight: 800; font-size: 18px; padding: 16px; border-radius: 22px; }
@@ -100,6 +101,8 @@
 
   <div class="arrows">
     <button id="btnL" class="pad-btn" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M15.5 4.5 7 12l8.5 7.5z"/></svg></button>
+    <button id="btnU" class="pad-btn hidden" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M4.5 15.5 12 7l7.5 8.5z"/></svg></button>
+    <button id="btnD" class="pad-btn hidden" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M4.5 8.5 12 17l7.5-8.5z"/></svg></button>
     <button id="btnR" class="pad-btn" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M8.5 4.5 17 12l-8.5 7.5z"/></svg></button>
   </div>
   <div class="a-row"><button id="btnA" class="pad-btn">A</button></div>
@@ -183,6 +186,9 @@
         $("waitText").textContent = m.text || "Waiting…";
         $("wait").classList.toggle("hidden", myTurn);
         if (!myTurn) releaseAll();
+      } else if (m.type === "layout") {
+        $("btnU").classList.toggle("hidden", !m.dpad);
+        $("btnD").classList.toggle("hidden", !m.dpad);
       } else if (m.type === "vibrate") {
         if (navigator.vibrate) navigator.vibrate(m.ms || 100);
       }
@@ -292,6 +298,15 @@
       inp.addEventListener("change", sendNames);
       inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
       row.appendChild(inp);
+      const hand = document.createElement("button");
+      hand.className = "hand";
+      hand.textContent = s.left ? "Left-handed" : "Right-handed";
+      hand.addEventListener("click", () => {
+        const left = slots.map((x) => !!x.left);
+        left[idx] = !left[idx];
+        send({ type: "hands", left }, true);
+      });
+      row.appendChild(hand);
       if (s.guest && inLobby) {
         const rm = document.createElement("button");
         rm.textContent = "Remove";
@@ -324,7 +339,7 @@
   function releaseAll() {
     for (const [id, el] of Object.entries(buttons)) press(id, el, false);
   }
-  const buttons = { L: $("btnL"), R: $("btnR"), A: $("btnA"), B: $("btnB") };
+  const buttons = { L: $("btnL"), R: $("btnR"), U: $("btnU"), D: $("btnD"), A: $("btnA"), B: $("btnB") };
   for (const [id, el] of Object.entries(buttons)) {
     el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); press(id, el, true); });
     const up = (e) => { e.preventDefault(); press(id, el, false); };

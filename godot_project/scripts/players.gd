@@ -86,6 +86,13 @@ func handle(cid: int, msg: Dictionary) -> bool:
 					var n := str(names[i]).strip_edges().left(14)
 					mine[i].name = n if n != "" else _default_name(mine[i])
 			_after_change()
+		"hands":
+			var left: Array = msg.get("left", [])
+			var mine2 := players_of(pid)
+			for i in mine2.size():
+				if i < left.size():
+					mine2[i].set_meta("left", bool(left[i]))
+			_after_change()
 		"add_guest":
 			add_guest(pid)
 		"remove_guest":
@@ -312,7 +319,8 @@ func _after_change() -> void:
 			continue
 		var slots: Array = []
 		for p in players_of(ph.pid):
-			slots.append({"name": p.name, "num": index_of(p) + 1, "color": p.color.to_html(false), "guest": p.guest})
+			slots.append({"name": p.name, "num": index_of(p) + 1, "color": p.color.to_html(false), "guest": p.guest,
+				"left": p.get_meta("left", false)})
 		server.send_to(ph.cid, {"type": "you", "slots": slots, "lobby": lobby_open,
 			"can_add": lobby_open and players.size() < MAX_PLAYERS})
 	changed.emit()

@@ -9,6 +9,7 @@ var url := ""
 var start_btn: PillButton
 var guest_btn: PillButton
 var back_btn: PillButton
+var sport := "Bowling"
 
 
 func _init() -> void:
@@ -43,7 +44,7 @@ func _draw() -> void:
 	var reg := UI.regular()
 	draw_rect(Rect2(Vector2.ZERO, Vector2(size.x, 100)), UI.WHITE)
 	draw_rect(Rect2(Vector2(0, 100), Vector2(size.x, 5)), UI.BLUE)
-	draw_string(f, Vector2(50, 66), "Bowling · Players", HORIZONTAL_ALIGNMENT_LEFT, -1, 40, UI.INK)
+	draw_string(f, Vector2(50, 66), sport + " · Players", HORIZONTAL_ALIGNMENT_LEFT, -1, 40, UI.INK)
 	UI.draw_logo(self, Vector2(size.x - 200, 62), 0.4)
 
 	# join card

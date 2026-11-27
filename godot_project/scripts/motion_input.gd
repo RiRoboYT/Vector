@@ -148,6 +148,14 @@ func _compute_raw() -> void:
 	raw_roll = v.z
 
 
+## Full phone orientation as a rotation matrix (device -> East-North-Up world).
+func device_basis() -> Basis:
+	var al := deg_to_rad(raw_orientation.x)
+	var be := deg_to_rad(raw_orientation.y)
+	var ga := deg_to_rad(raw_orientation.z)
+	return Basis(Vector3(0, 0, 1), al) * Basis(Vector3(1, 0, 0), be) * Basis(Vector3(0, 1, 0), ga)
+
+
 ## Returns (yaw, pitch, roll) in radians for a grip, in an East-North-Up world.
 func _angles_for(g: Grip) -> Vector3:
 	var al := deg_to_rad(raw_orientation.x)
