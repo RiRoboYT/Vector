@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#ececec">
+<title>VectorSports Controller</title>
+<style>
+  :root {
+    --bg: #ececec; --card: #ffffff; --ink: #3c3c3c; --sub: #7a7a7a;
+    --blue: #31b8e8; --blue-dark: #1a98c9; --ring: #bfe9f8;
+    --green: #2fbf5b; --amber: #f1a417; --red: #e5484d;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; -webkit-touch-callout: none; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); overflow: hidden;
+    font-family: "M PLUS Rounded 1c", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    -webkit-user-select: none; user-select: none; overscroll-behavior: none; touch-action: none; }
+  body { display: flex; flex-direction: column; gap: 12px; height: 100dvh;
+    padding: max(12px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom));
+    background-image: repeating-linear-gradient(#ececec 0 3px, #e3e3e3 3px 4px); }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .logo { font-weight: 800; font-size: 20px; letter-spacing: 1px; color: var(--blue); }
+  .logo small { color: var(--sub); font-size: 11px; letter-spacing: 3px; display: block; margin-top: -3px; }
+  .pill { display: inline-flex; align-items: center; gap: 7px; padding: 7px 12px; border-radius: 999px;
+    background: var(--card); box-shadow: 0 2px 8px rgba(0,0,0,.08); font-weight: 700; font-size: 13px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); }
+  .dot.ok { background: var(--green); } .dot.wait { background: var(--amber); }
+  .chip { border: 2px solid var(--ring); background: var(--card); color: var(--blue-dark); font-weight: 800;
+    font-size: 13px; padding: 7px 12px; border-radius: 999px; font-family: inherit; }
+  #hint { text-align: center; font-weight: 700; color: var(--sub); font-size: 14px; min-height: 18px; }
+
+  .pad-btn { appearance: none; border: 0; font-family: inherit; color: var(--blue-dark); cursor: pointer;
+    background: linear-gradient(#ffffff 0 55%, #e4e7ea 100%); border: 3px solid var(--blue);
+    box-shadow: 0 5px 0 #c9cfd6, 0 8px 18px rgba(0,0,0,.10); transition: transform .05s, box-shadow .05s; }
+  .pad-btn.down { transform: translateY(4px); box-shadow: 0 1px 0 #c9cfd6, 0 3px 8px rgba(0,0,0,.10);
+    background: linear-gradient(#e9f8fe, #cdeefb); }
+  .arrows { display: flex; gap: 14px; }
+  .arrows .pad-btn { flex: 1; height: 86px; border-radius: 28px; display: flex; align-items: center; justify-content: center; }
+  .arrows svg { width: 40px; height: 40px; fill: var(--blue-dark); }
+  .a-row { display: flex; justify-content: center; }
+  #btnA { width: 92px; height: 92px; border-radius: 50%; font-size: 40px; font-weight: 800; }
+  #btnB { flex: 1; min-height: 42vh; border-radius: 44px; color: #fff; font-weight: 800;
+    background: linear-gradient(#4cc6ef, #1a98c9); border: 4px solid #1584b0;
+    box-shadow: 0 7px 0 #116f94, 0 12px 26px rgba(20,120,170,.35);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+  #btnB b { font-size: 110px; line-height: 1; }
+  #btnB span { font-size: 17px; opacity: .9; }
+  #btnB.down { transform: translateY(5px); box-shadow: 0 2px 0 #116f94, 0 4px 10px rgba(20,120,170,.3);
+    background: linear-gradient(#3db7e3, #1488b6); }
+
+  /* start overlay */
+  #start { position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column; gap: 16px;
+    justify-content: center; padding: 24px; background: var(--bg); }
+  .card { background: var(--card); border-radius: 26px; padding: 20px; border: 3px solid var(--ring);
+    box-shadow: 0 6px 20px rgba(0,0,0,.08); }
+  .card h2 { margin: 0 0 8px; font-size: 21px; color: var(--ink); }
+  .card p { margin: 0; color: var(--sub); font-size: 15px; line-height: 1.45; }
+  #enableBtn { font-size: 24px; font-weight: 800; padding: 26px; border-radius: 34px; color: #fff;
+    background: linear-gradient(#4cc6ef, #1a98c9); border: 4px solid #1584b0; box-shadow: 0 6px 0 #116f94; font-family: inherit; }
+  #warn { color: var(--red); font-weight: 700; margin-top: 10px; }
+  .hidden { display: none !important; }
+  #me { display: flex; align-items: center; gap: 8px; border: 0; background: var(--card); border-radius: 999px;
+    padding: 6px 12px 6px 6px; font-family: inherit; font-weight: 800; font-size: 14px; color: var(--ink);
+    box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+  #me i { width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-style: normal; font-size: 14px; background: var(--blue); }
+  #wait { position: fixed; left: 14px; right: 14px; bottom: max(14px, env(safe-area-inset-bottom)); top: 170px; z-index: 3;
+    border-radius: 40px; background: rgba(236,236,236,.88); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 24px; font-size: 24px; font-weight: 800; color: var(--sub);
+    backdrop-filter: blur(2px); }
+  #names { position: fixed; inset: 0; z-index: 6; background: rgba(0,0,0,.25); display: flex; align-items: flex-end; }
+  #names .sheet { width: 100%; background: var(--bg); border-radius: 28px 28px 0 0; padding: 18px 16px max(18px, env(safe-area-inset-bottom));
+    display: flex; flex-direction: column; gap: 10px; }
+  #names h3 { margin: 0 0 4px; font-size: 20px; }
+  .slot { display: flex; align-items: center; gap: 10px; background: var(--card); border-radius: 20px; padding: 10px 12px;
+    border: 3px solid var(--ring); }
+  .slot i { width: 34px; height: 34px; border-radius: 50%; color: #fff; font-style: normal; font-weight: 800;
+    display: inline-flex; align-items: center; justify-content: center; flex: none; }
+  .slot input { flex: 1; min-width: 0; font: inherit; font-size: 20px; font-weight: 700; border: 0; outline: 0; background: none;
+    color: var(--ink); -webkit-user-select: text; user-select: text; }
+  .slot .hand { background: #e4f4fb; color: var(--blue-dark); }
+  .slot button { border: 0; background: #f3d7d7; color: var(--red); font-weight: 800; border-radius: 12px; padding: 8px 10px; font-family: inherit; }
+  .sheet-btns { display: flex; gap: 10px; }
+  .sheet-btns button { flex: 1; font-family: inherit; font-weight: 800; font-size: 18px; padding: 16px; border-radius: 22px; }
+  #addGuest { background: var(--card); border: 3px solid var(--blue); color: var(--blue-dark); }
+  #doneNames { background: linear-gradient(#4cc6ef, #1a98c9); color: #fff; border: 3px solid #1584b0; }
+  #rotate { position: fixed; inset: 0; background: var(--bg); display: none; align-items: center; justify-content: center;
+    text-align: center; padding: 30px; font-size: 22px; font-weight: 800; z-index: 10; }
+  @media (orientation: landscape) and (max-height: 500px) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+  <header>
+    <button id="me" class="hidden"><i id="meNum">1</i><span id="meName">Player</span> ✎</button>
+    <div class="logo" id="logo">VECTOR<small>SPORTS</small></div>
+    <div class="pill"><span id="connDot" class="dot"></span><span id="connText">Connecting…</span></div>
+    <button id="centerBtn" class="chip">Center</button>
+  </header>
+  <div id="hint"></div>
+
+  <div class="arrows">
+    <button id="btnL" class="pad-btn" aria-label="Left"><svg viewBox="0 0 24 24"><path d="M15.5 4.5 7 12l8.5 7.5z"/></svg></button>
+    <button id="btnU" class="pad-btn hidden" aria-label="Up"><svg viewBox="0 0 24 24"><path d="M4.5 15.5 12 7l7.5 8.5z"/></svg></button>
+    <button id="btnD" class="pad-btn hidden" aria-label="Down"><svg viewBox="0 0 24 24"><path d="M4.5 8.5 12 17l7.5-8.5z"/></svg></button>
+    <button id="btnR" class="pad-btn" aria-label="Right"><svg viewBox="0 0 24 24"><path d="M8.5 4.5 17 12l-8.5 7.5z"/></svg></button>
+  </div>
+  <div class="a-row"><button id="btnA" class="pad-btn">A</button></div>
+  <button id="btnB" class="pad-btn"><b>B</b><span>Hold to swing</span></button>
+
+  <div id="wait" class="hidden"><div id="waitText">Waiting…</div></div>
+
+  <section id="names" class="hidden">
+    <div class="sheet">
+      <h3>Players on this phone</h3>
+      <div id="slots"></div>
+      <button id="hapticsBtn" class="chip" style="align-self:flex-start">Haptics: On</button>
+      <div class="sheet-btns">
+        <button id="addGuest">+ Add guest</button>
+        <button id="doneNames">Done</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="start">
+    <div class="card">
+      <h2>VectorSports controller</h2>
+      <p>Tap the button and allow <b>Motion &amp; Orientation</b> access.<br>Grip your phone firmly while you play.</p>
+      <p id="warn" class="hidden"></p>
+    </div>
+    <button id="enableBtn">Enable Motion</button>
+  </section>
+
+  <!-- iPhone haptics: Safari plays a system tick when a switch toggles -->
+  <input type="checkbox" switch id="hsw" aria-hidden="true" tabindex="-1" style="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none">
+  <label for="hsw" id="hswl" aria-hidden="true" style="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none"></label>
+
+  <div id="rotate">Please hold your phone upright<br>(turn on portrait lock)</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                  set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+  let pid = store.get("vs_pid");
+  if (!pid) { pid = Math.random().toString(36).slice(2) + Date.now().toString(36); store.set("vs_pid", pid); }
+  let slots = [], inLobby = true, canAdd = true, myTurn = true;
+  const state = {
+    ws: null, open: false, rtt: -1, orientation: null,
+    accel: { x: 0, y: 0, z: 0 }, gyro: { alpha: 0, beta: 0, gamma: 0 },
+    lastSend: 0, sensorsOn: false, gotEvent: false, wakeLock: null, denied: false,
+  };
+
+  // ---------- connection ----------
+  function setConn(kind, text) {
+    $("connDot").className = "dot " + (kind === "ok" ? "ok" : kind === "wait" ? "wait" : "");
+    $("connText").textContent = text;
+  }
+  function connect() {
+    setConn("wait", "Connecting…");
+    const ws = new WebSocket("wss://" + location.host + "/ws");
+    state.ws = ws;
+    ws.onopen = () => {
+      state.open = true; setConn("ok", "Connected");
+      ws.send(JSON.stringify({ type: "hello", pid, name: store.get("vs_name") || "" }));
+      ping();
+    };
+    ws.onclose = () => {
+      state.open = false; state.rtt = -1;
+      releaseAll();
+      setConn("bad", "Reconnecting…");
+      setTimeout(connect, 1000);
+    };
+    ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    ws.onmessage = (ev) => {
+      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      if (m.type === "pong") {
+        const r = performance.now() - m.t;
+        state.rtt = state.rtt < 0 ? r : state.rtt * 0.7 + r * 0.3;
+      } else if (m.type === "hint") {
+        $("hint").textContent = m.text || "";
+      } else if (m.type === "you") {
+        const first = !slots.length;
+        slots = m.slots || []; inLobby = !!m.lobby; canAdd = !!m.can_add;
+        renderMe();
+        if (first && slots.length && inLobby && !store.get("vs_name") && state.sensorsOn) {
+          $("names").classList.remove("hidden"); renderSlots();
+        }
+      } else if (m.type === "turn") {
+        myTurn = !!m.mine;
+        $("waitText").textContent = m.text || "Waiting…";
+        $("wait").classList.toggle("hidden", myTurn);
+        if (!myTurn) releaseAll();
+      } else if (m.type === "layout") {
+        $("btnU").classList.toggle("hidden", !m.dpad);
+        $("btnD").classList.toggle("hidden", !m.dpad);
+      } else if (m.type === "vibrate") {
+        haptic("", m.ms || 100);
+      } else if (m.type === "haptic") {
+        haptic(m.p || "tap");
+      }
+    };
+  }
+  function send(obj, force) {
+    const ws = state.ws;
+    // motion frames are dropped if the link is backed up (stale motion is useless);
+    // button events are always sent.
+    if (ws && state.open && ws.readyState === 1 && (force || ws.bufferedAmount < 2048)) {
+      ws.send(JSON.stringify(obj));
+      return true;
+    }
+    return false;
+  }
+  function ping() { send({ type: "ping", t: performance.now() }); }
+  setInterval(ping, 500);
+
+  // ---------- sensors ----------
+  function sendSensor() {
+    if (!state.orientation) return;
+    const now = performance.now();
+    if (now - state.lastSend < 8) return; // cap ~120 Hz
+    state.lastSend = now;
+    send({ type: "sensor", orientation: state.orientation, accel: state.accel, gyro: state.gyro, t: now,
+      rtt: state.rtt >= 0 ? Math.round(state.rtt * 10) / 10 : undefined });
+  }
+  function onOrientation(e) {
+    if (e.alpha === null && e.beta === null) return;
+    state.gotEvent = true;
+    state.orientation = { alpha: e.alpha || 0, beta: e.beta || 0, gamma: e.gamma || 0 };
+    sendSensor();
+  }
+  function onMotion(e) {
+    const a = e.acceleration, r = e.rotationRate;
+    if (a && a.x !== null) state.accel = { x: +a.x.toFixed(3), y: +a.y.toFixed(3), z: +a.z.toFixed(3) };
+    if (r && r.beta !== null) state.gyro = { alpha: +(r.alpha || 0).toFixed(2), beta: +(r.beta || 0).toFixed(2), gamma: +(r.gamma || 0).toFixed(2) };
+    sendSensor();
+  }
+
+  async function enable() {
+    const warn = $("warn");
+    warn.classList.add("hidden");
+    if (!window.isSecureContext) {
+      warn.textContent = "Open this page with https:// – scan the QR code on the TV again.";
+      warn.classList.remove("hidden");
+      return;
+    }
+    try {
+      const reqs = []; // iOS 13+: must start inside the tap
+      if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function")
+        reqs.push(DeviceOrientationEvent.requestPermission());
+      if (typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function")
+        reqs.push(DeviceMotionEvent.requestPermission());
+      const results = await Promise.all(reqs.map((r) => r.catch(() => "error")));
+      state.denied = results.some((r) => r !== "granted");
+    } catch (err) { state.denied = true; }
+    if (!state.sensorsOn) {
+      window.addEventListener("deviceorientation", onOrientation, true);
+      window.addEventListener("devicemotion", onMotion, true);
+      state.sensorsOn = true;
+    }
+    keepAwake();
+    $("start").classList.add("hidden");
+    if (slots.length && inLobby && !store.get("vs_name")) { $("names").classList.remove("hidden"); renderSlots(); }
+    setTimeout(() => {
+      if (!state.gotEvent) {
+        $("start").classList.remove("hidden");
+        warn.innerHTML = state.denied
+          ? "Motion access was denied. Close this tab, open the page again and tap <b>Allow</b>. If it never asks: Settings → Apps → Safari → Advanced → Website Data, delete this address, then retry."
+          : "No motion data is arriving. Try Safari (iPhone) or Chrome (Android).";
+        warn.classList.remove("hidden");
+      }
+    }, 2500);
+  }
+  async function keepAwake() {
+    try { if ("wakeLock" in navigator) state.wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && state.sensorsOn) keepAwake();
+    if (document.visibilityState !== "visible") releaseAll();
+  });
+
+  // ---------- haptics ----------
+  // Android: Vibration API. iPhone: no Vibration API in Safari, so toggle a
+  // hidden switch control, which plays a short system haptic tick (iOS 18+).
+  const PATTERNS = {
+    tick: [8], tap: [12], hit: [35], strong: [70, 40, 90], double: [25, 70, 25],
+    long: [220], out: [60, 80, 60, 80, 140],
+  };
+  let hapticsOn = store.get("vs_haptics") !== "off";
+  const canVibrate = typeof navigator.vibrate === "function";
+  function iosTick() { try { $("hswl").click(); } catch (e) {} }
+  function haptic(kind, ms) {
+    if (!hapticsOn) return;
+    const pat = ms ? [ms] : (PATTERNS[kind] || PATTERNS.tap);
+    if (canVibrate) { navigator.vibrate(pat); return; }
+    let t = 0;
+    for (let i = 0; i < pat.length; i += 2) {
+      const n = Math.max(1, Math.round(pat[i] / 45)); // longer buzz = a few ticks in a row
+      for (let k = 0; k < n; k++) setTimeout(iosTick, t + k * 45);
+      t += pat[i] + (pat[i + 1] || 0);
+    }
+  }
+  function renderHaptics() { $("hapticsBtn").textContent = "Haptics: " + (hapticsOn ? "On" : "Off"); }
+  $("hapticsBtn").addEventListener("click", () => {
+    hapticsOn = !hapticsOn;
+    store.set("vs_haptics", hapticsOn ? "on" : "off");
+    renderHaptics();
+    haptic("double");
+  });
+  renderHaptics();
+
+  // ---------- players on this phone ----------
+  function renderMe() {
+    const me = $("me");
+    if (!slots.length) { me.classList.add("hidden"); $("logo").classList.remove("hidden"); return; }
+    me.classList.remove("hidden"); $("logo").classList.add("hidden");
+    $("meNum").textContent = slots[0].num;
+    $("meNum").style.background = "#" + slots[0].color;
+    $("meName").textContent = slots.length > 1 ? slots[0].name + " +" + (slots.length - 1) : slots[0].name;
+    if (!$("names").classList.contains("hidden")) renderSlots();
+  }
+  function renderSlots() {
+    const box = $("slots");
+    // keep text that is being typed
+    const typed = [...box.querySelectorAll("input")].map((i) => i.value);
+    box.innerHTML = "";
+    slots.forEach((s, idx) => {
+      const row = document.createElement("div");
+      row.className = "slot";
+      row.style.borderColor = "#" + s.color;
+      row.innerHTML = '<i style="background:#' + s.color + '">' + s.num + '</i>';
+      const inp = document.createElement("input");
+      inp.maxLength = 14; inp.value = typed[idx] !== undefined && typed.length === slots.length ? typed[idx] : s.name;
+      inp.placeholder = "Name"; inp.enterKeyHint = "done";
+      inp.addEventListener("change", sendNames);
+      inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+      row.appendChild(inp);
+      const hand = document.createElement("button");
+      hand.className = "hand";
+      hand.textContent = s.left ? "Left-handed" : "Right-handed";
+      hand.addEventListener("click", () => {
+        const left = slots.map((x) => !!x.left);
+        left[idx] = !left[idx];
+        send({ type: "hands", left }, true);
+      });
+      row.appendChild(hand);
+      if (s.guest && inLobby) {
+        const rm = document.createElement("button");
+        rm.textContent = "Remove";
+        rm.addEventListener("click", () => send({ type: "remove_guest", index: idx }, true));
+        row.appendChild(rm);
+      }
+      box.appendChild(row);
+    });
+    $("addGuest").classList.toggle("hidden", !(inLobby && canAdd));
+  }
+  function sendNames() {
+    const names = [...$("slots").querySelectorAll("input")].map((i) => i.value.trim());
+    if (names[0]) store.set("vs_name", names[0]);
+    send({ type: "names", names }, true);
+  }
+  $("me").addEventListener("click", () => { $("names").classList.remove("hidden"); renderSlots(); });
+  $("doneNames").addEventListener("click", () => { sendNames(); $("names").classList.add("hidden"); });
+  $("addGuest").addEventListener("click", () => { sendNames(); send({ type: "add_guest" }, true); });
+
+  // ---------- buttons ----------
+  const held = {};
+  function press(id, el, down) {
+    if (down && !myTurn) return;
+    if (!!held[id] === down) return;
+    held[id] = down;
+    el.classList.toggle("down", down);
+    send({ type: "btn", id, down, t: performance.now() }, true);
+    if (down) haptic(id === "B" ? "tap" : "tick");
+  }
+  function releaseAll() {
+    for (const [id, el] of Object.entries(buttons)) press(id, el, false);
+  }
+  const buttons = { L: $("btnL"), R: $("btnR"), U: $("btnU"), D: $("btnD"), A: $("btnA"), B: $("btnB") };
+  for (const [id, el] of Object.entries(buttons)) {
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); el.setPointerCapture(e.pointerId); press(id, el, true); });
+    const up = (e) => { e.preventDefault(); press(id, el, false); };
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+    el.addEventListener("lostpointercapture", up);
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+  }
+  $("centerBtn").addEventListener("click", () => send({ type: "calibrate" }, true));
+  $("enableBtn").addEventListener("click", enable);
+
+  connect();
+})();
+</script>
+</body>
+</html>
