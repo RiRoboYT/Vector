@@ -106,6 +106,8 @@ func _on_hit(other: Node) -> void:
 	var strength := clampf(rel.length() / 6.0, 0.0, 1.0)
 	if other is BowlingBall:
 		strength = clampf(strength * 1.6 + 0.3, 0.0, 1.0)
+		if strength > 0.6:
+			Fx.sparks(get_parent(), global_position + Vector3(0, 0.15, 0), Color(1, 0.97, 0.85), 12)
 	Sfx.pin_hit(strength)
 
 

@@ -88,6 +88,7 @@ func set_call(t: String) -> void:
 
 
 func show_results() -> void:
+	add_child(Confetti.new())
 	_view.results = true
 	_final.visible = true
 

@@ -25,6 +25,7 @@ func _ready() -> void:
 		var c := Character.new()
 		c.shirt = CricketGame.TEAM_COLORS[1]
 		c.pants = Color(0.95, 0.95, 0.95)
+		c.outfit = "cricket"
 		c.hand_targets = true
 		add_child(c)
 		c.position = p

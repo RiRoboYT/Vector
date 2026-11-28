@@ -80,6 +80,7 @@ func _ready() -> void:
 	add_child(ball)
 	bowler = Character.new()
 	bowler.bowling = true
+	bowler.outfit = "bowling"
 	add_child(bowler)
 	camera = Camera3D.new()
 	camera.fov = 56.0
@@ -136,6 +137,7 @@ func _start_turn() -> void:
 	_full_rack()
 	_approach = 0.0
 	_post_t = 0.0
+	bowler.set_look(Character.seed_for(player().name), player().color) # each player bowls as their own person
 	bowler.set_ghost(1.0)
 	ball_x = _aims[cur].x
 	angle = _aims[cur].y
@@ -169,6 +171,9 @@ func _update_intro() -> void:
 
 func _refresh_hud() -> void:
 	hud.set_scores(scores, roster.players, cur)
+	if lane.monitor:
+		lane.monitor_l.text = "%s\nFrame %d   %d" % [player().name.left(12).to_upper(), mini(scores[cur].current_frame() + 1, 10), scores[cur].total()]
+		lane.monitor.text = "%s\nFrame %d   %d" % [player().name.left(12).to_upper(), mini(scores[cur].current_frame() + 1, 10), scores[cur].total()]
 
 
 func _full_rack() -> void:
@@ -337,6 +342,8 @@ func _update_roll() -> void:
 	if absf(p.x) > BowlingLane.LANE_HALF + 0.02 and p.z > -BowlingLane.LANE_LEN + 0.4:
 		_gutter = true
 	var stalled := ball.linear_velocity.length() < 0.25 and _state_t > 1.0
+	if p.z < -BowlingLane.LANE_LEN + 0.7 and not _gutter and _standing_before == 10 and absf(p.x) < BowlingLane.LANE_HALF:
+		Fx.slowmo(get_tree(), 0.4, 0.9) # dramatic pin action
 	if p.z < -BowlingLane.LANE_LEN + 0.7 or p.y < -0.2 or stalled or _state_t > 9.0:
 		state = State.SETTLE
 		_state_t = 0.0
@@ -368,6 +375,12 @@ func _count_result() -> void:
 	score.add(knocked)
 	print("[bowling] %s: %s  (knocked %d, total %d)" % [player().name, text, knocked, score.total()])
 	hud.big_message(text, text.ends_with("!"))
+	if text.ends_with("!"):
+		bowler.react("cheer", 2.0)
+		if text == "STRIKE!":
+			hud.add_child(Confetti.new(90))
+	elif knocked == 0:
+		bowler.react("sad", 2.0)
 	state = State.RESULT
 	_state_t = 0.0
 

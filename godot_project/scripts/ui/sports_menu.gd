@@ -4,6 +4,7 @@ extends Screen
 
 var buttons: Array[PillButton] = []
 var back_btn: PillButton
+var gfx_btn: PillButton
 var _preview := "Bowling"
 var card: PreviewCard
 var cricket_card: PreviewCard
@@ -33,6 +34,12 @@ func _init() -> void:
 	back_btn.font_size = 26
 	back_btn.pressed.connect(func(): done.emit("back"))
 	add_child(back_btn)
+	gfx_btn = PillButton.new("Graphics: " + Look.NAMES[Look.get_quality()], Vector2(280, 66))
+	gfx_btn.font_size = 24
+	gfx_btn.pressed.connect(func():
+		Look.set_quality((Look.get_quality() + 1) % 3)
+		gfx_btn.text = "Graphics: " + Look.NAMES[Look.get_quality()])
+	add_child(gfx_btn)
 
 
 func _process(delta: float) -> void:
@@ -42,6 +49,7 @@ func _process(delta: float) -> void:
 		if buttons[i].hovered:
 			_preview = buttons[i].text
 	back_btn.position = Vector2(70, size.y - 100)
+	gfx_btn.position = Vector2(270, size.y - 100)
 	for c in [card, cricket_card, tennis_card]:
 		c.position = Vector2(470, 160)
 		c.size = Vector2(size.x - 540, size.y - 300)

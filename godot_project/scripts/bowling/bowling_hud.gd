@@ -160,6 +160,7 @@ func big_message(t: String, celebrate: bool) -> void:
 
 
 func show_results(scores: Array[BowlingScore], players: Array[Players.Player]) -> void:
+	add_child(Confetti.new())
 	var rows: Array = []
 	for i in players.size():
 		rows.append({"name": players[i].name, "color": players[i].color, "score": scores[i].total(),

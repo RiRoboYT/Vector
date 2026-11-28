@@ -33,6 +33,8 @@ func setup(p_team: int, p_slot: int, shirt: Color, p_name: String) -> void:
 	character = Character.new()
 	character.shirt = shirt
 	character.pants = Color(0.96, 0.96, 0.96)
+	character.outfit = "tennis"
+	character.look_seed = Character.seed_for(p_name) if p_name != "" else -1
 	character.hand_targets = true
 	add_child(character)
 	racket = _make_racket()
@@ -161,6 +163,9 @@ func _process(delta: float) -> void:
 			hand_r = global_position + basis * Vector3(0.42, 0.98 - c.crouch, -0.3)
 			head_dir = (basis * Vector3(0.55, 0.75, -0.35)).normalized()
 			hand_l = global_position + basis * Vector3(-0.15, 1.0 + serve_toss * 1.0, -0.4 - serve_toss * 0.1)
+	if c.reaction != "":
+		hand_r = c.right_hand()
+		head_dir = Vector3(0, 1, 0)
 	c.hand_r_world = hand_r
 	c.hand_l_world = hand_l
 	# racket: grip in the hand, head pointing along head_dir (local -Z)

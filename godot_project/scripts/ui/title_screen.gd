@@ -16,32 +16,47 @@ func _process(delta: float) -> void:
 
 
 func _draw() -> void:
-	draw_rect(Rect2(Vector2.ZERO, size), UI.WHITE)
-	var faint := Color("efefef")
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 11
-	for i in 14:
-		var p := Vector2(rng.randf_range(60, size.x - 60), rng.randf_range(40, size.y - 200))
-		var bob := sin(_t * 0.8 + i) * 6.0
+	# frosted wash over the 3D island so the logo pops
+	draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.12 if Screen.backdrop else 1.0))
+	var glass := Rect2(Vector2(size.x * 0.5 - 430, size.y * 0.42 - 150), Vector2(860, 260))
+	var intro := clampf(_t / 0.8, 0.0, 1.0)
+	var x := intro - 1.0
+	var pop := 1.0 + 2.7 * x * x * x + 1.7 * x * x # ease out back
+	draw_set_transform(glass.get_center(), 0.0, Vector2.ONE * maxf(pop, 0.01))
+	var gr := Rect2(-glass.size * 0.5, glass.size)
+	draw_style_box(UI.panel_style(Color(1, 1, 1, 0.12), Color(0, 0, 0, 0), 60, 0), gr.grow(10).grow_side(SIDE_BOTTOM, 10))
+	draw_style_box(UI.panel_style(Color(1, 1, 1, 0.9), Color(UI.BLUE, 0.5), 56, 3), gr)
+	var bob := sin(_t * 1.6) * 4.0
+	UI.draw_logo(self, Vector2(0, 30 + bob), 1.25)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	# floating sport icons orbiting the logo
+	var icons := 6
+	for i in icons:
+		var a := _t * 0.35 + TAU * i / icons
+		var p := glass.get_center() + Vector2(cos(a) * 520.0, sin(a) * 210.0)
+		var k := clampf((_t - 0.3 - i * 0.08) / 0.4, 0.0, 1.0)
+		if k <= 0.0:
+			continue
+		draw_circle(p + Vector2(0, 6), 34 * k, Color(0, 0, 0, 0.08))
+		draw_circle(p, 34 * k, UI.WHITE)
 		match i % 3:
 			0: # bowling pin
-				var s := rng.randf_range(0.8, 1.3)
-				draw_circle(p + Vector2(0, bob), 14 * s, faint)
-				draw_circle(p + Vector2(0, 40 * s + bob), 24 * s, faint)
-				draw_rect(Rect2(p + Vector2(-8 * s, 8 * s + bob), Vector2(16 * s, 24 * s)), faint)
-			1: # ball
-				draw_circle(p + Vector2(0, bob), rng.randf_range(22, 36), faint)
-			2: # racket
-				draw_arc(p + Vector2(0, bob), 26, 0, TAU, 24, faint, 9.0)
-				draw_line(p + Vector2(0, 26 + bob), p + Vector2(0, 74 + bob), faint, 9.0)
-	UI.draw_logo(self, Vector2(size.x * 0.5, size.y * 0.42), 1.25)
-	# two-tone band
-	var by := size.y * 0.62
-	draw_rect(Rect2(Vector2(0, by), Vector2(size.x, 6)), UI.BLUE)
-	draw_rect(Rect2(Vector2(0, by + 10), Vector2(size.x, 3)), UI.BORDER)
-	var a := 0.5 + 0.5 * sin(_t * 3.5)
-	draw_press_a(size.y * 0.78, "to start", 0.35 + a * 0.65)
+				draw_circle(p + Vector2(0, -10) * k, 8 * k, UI.INK_DARK)
+				draw_circle(p + Vector2(0, 8) * k, 13 * k, UI.INK_DARK)
+				draw_rect(Rect2(p + Vector2(-9, -2) * k, Vector2(18, 4) * k), Color("e23d3d"))
+			1: # tennis ball
+				draw_circle(p, 22 * k, Color("d9f23c"))
+				draw_arc(p + Vector2(-26, 0) * k, 20 * k, -0.9, 0.9, 16, UI.WHITE, 3.0 * k, true)
+				draw_arc(p + Vector2(26, 0) * k, 20 * k, PI - 0.9, PI + 0.9, 16, UI.WHITE, 3.0 * k, true)
+			2: # cricket ball
+				draw_circle(p, 22 * k, Color("c0392b"))
+				draw_line(p + Vector2(-16, -14) * k, p + Vector2(16, 14) * k, Color("f2e3c0"), 3.0 * k, true)
+	var a2 := 0.5 + 0.5 * sin(_t * 3.5)
+	if _t > 0.9:
+		var pill := Rect2(Vector2(size.x * 0.5 - 220, size.y * 0.78 - 46), Vector2(440, 66))
+		draw_style_box(UI.panel_style(Color(1, 1, 1, 0.92), Color(UI.BLUE, 0.6), 33, 3), pill)
+		draw_press_a(size.y * 0.78, "to start", 0.45 + a2 * 0.55)
 	var f := UI.regular()
 	var cr := "VectorSports — a phone motion game"
 	var cw := f.get_string_size(cr, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x
-	draw_string(f, Vector2(size.x * 0.5 - cw * 0.5, size.y - 30), cr, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UI.INK_SOFT)
+	draw_string(f, Vector2(size.x * 0.5 - cw * 0.5, size.y - 30), cr, HORIZONTAL_ALIGNMENT_LEFT, -1, 18, UI.INK)

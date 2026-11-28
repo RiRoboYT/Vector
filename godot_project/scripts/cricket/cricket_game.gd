@@ -87,6 +87,8 @@ func _ready() -> void:
 	ball = CricketBall.new()
 	ball.field = field
 	add_child(ball)
+	ball.bounced.connect(func(p: Vector3, on_pitch: bool):
+		Fx.puff(self, p + Vector3(0, 0.03, 0), Color(0.86, 0.76, 0.56, 0.6) if on_pitch else Color(0.6, 0.75, 0.45, 0.45), 10 if on_pitch else 5, 0.16, 1.0))
 	rig = BatterRig.new()
 	add_child(rig)
 	camera = Camera3D.new()
@@ -756,6 +758,9 @@ func _on_bat_contact(_p: Vector3, quality: float, edge: bool) -> void:
 		hud.flash("Edge!")
 	elif quality > 0.8:
 		hud.flash("Middled!")
+		Fx.sparks(self, _p, Color(1, 0.96, 0.8), 14)
+		if quality > 0.9:
+			Fx.slowmo(get_tree(), 0.4, 0.45)
 	await get_tree().create_timer(0.12).timeout
 	_start_play(true)
 
@@ -935,6 +940,15 @@ func _on_play_finished(kind_s: String, runs: int, detail: String) -> void:
 				text = "%d run%s" % [runs, "" if runs == 1 else "s"] if runs > 0 else "Dot ball"
 	print("[cricket] %s %s  ->  %s  (%d/%d, %s ov)" % [teams[bat_team].name, striker, text, score.cur().runs, score.cur().wickets, score.over_text()])
 	hud.big_message(text, kind_s in ["four", "six", "caught", "bowled", "runout"])
+	# crowd and players react
+	if out:
+		Crowd.cheer(1.0)
+		for m in play.all_movers():
+			m.ch.react("cheer", 2.6)
+		rig.character.react("sad", 2.6)
+	elif kind_s in ["four", "six"]:
+		Crowd.cheer(1.0 if kind_s == "six" else 0.7)
+		rig.character.react("cheer", 2.2)
 	if out:
 		_haptic_batter("out")
 		_haptic_bowler("strong")

@@ -28,6 +28,7 @@ func setup(team_shirt: Color, lefty: bool) -> void:
 	character = Character.new()
 	character.shirt = team_shirt
 	character.pants = Color(0.95, 0.95, 0.95) # cricket whites
+	character.outfit = "cricket"
 	character.hand_targets = true
 	add_child(character)
 	if bat == null:

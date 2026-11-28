@@ -30,8 +30,11 @@ static func _pin_spots() -> Array[Vector3]:
 func _ready() -> void:
 	lane_mat = StandardMaterial3D.new()
 	lane_mat.albedo_texture = _cached("lane", _lane_texture)
-	lane_mat.roughness = 0.25
-	lane_mat.metallic_specular = 0.7
+	lane_mat.roughness = 0.12 # freshly oiled: glossy, reflects the pins and lights
+	lane_mat.metallic_specular = 0.75
+	lane_mat.clearcoat_enabled = true
+	lane_mat.clearcoat = 0.6
+	lane_mat.clearcoat_roughness = 0.08
 	lane_mat.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 
 	_build_environment()
@@ -40,6 +43,7 @@ func _ready() -> void:
 		_build_lane_visual(k * LANE_PITCH, true)
 	_build_lane_visual(0.0, false)
 	_build_hall()
+	_build_extras()
 
 
 # ---------------------------------------------------------------- physics
@@ -272,28 +276,102 @@ func _build_hall() -> void:
 	add_child(floor)
 
 
+var monitor: Label3D
+var monitor_l: Label3D
+
+
+## Reflections, neon, score monitors, ball returns and other bowlers.
+func _build_extras() -> void:
+	# reflection probe so the glossy lane mirrors the pins and ceiling lights
+	if Look.get_quality() >= Look.MEDIUM:
+		var probe := ReflectionProbe.new()
+		probe.size = Vector3(LANE_PITCH * 5, 4.4, 26.0)
+		probe.position = Vector3(0, 2.0, -9.5)
+		probe.box_projection = true
+		probe.interior = true
+		probe.update_mode = ReflectionProbe.UPDATE_ONCE
+		probe.ambient_mode = ReflectionProbe.AMBIENT_DISABLED
+		add_child(probe)
+	# neon name across the masking panel, lane numbers per lane
+	Props.neon(self, "VECTOR BOWL", Vector3(0, 2.18, -LANE_LEN - 0.93), 0.0, Color("31d8ff"), 0.0024)
+	for k in [-2, -1, 0, 1, 2]:
+		var n := Props.neon(self, str(5 + k), Vector3(k * LANE_PITCH + 0.5, 1.3, -LANE_LEN - 0.93), 0.0, Color("ff4fa3"), 0.0016)
+		n.outline_size = 10
+	# glowing strips along both side walls
+	for side: float in [-1.0, 1.0]:
+		for col: Color in [Color("ff4fa3"), Color("31d8ff")]:
+			var strip := MeshInstance3D.new()
+			var sb := BoxMesh.new()
+			sb.size = Vector3(0.04, 0.05, 30.0)
+			strip.mesh = sb
+			var sm := StandardMaterial3D.new()
+			sm.albedo_color = col
+			sm.emission_enabled = true
+			sm.emission = col
+			sm.emission_energy_multiplier = 2.2
+			sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			strip.material_override = sm
+			strip.position = Vector3(side * 5.76, 3.3 if col == Color("ff4fa3") else 3.42, -7.0)
+			add_child(strip)
+		Props.neon(self, "STRIKE!" if side < 0 else "SPARE?", Vector3(side * 5.74, 2.85, -9.0), -side * PI * 0.5, Color("ffd23f") if side < 0 else Color("31d8ff"), 0.008)
+	# big score screens on the side walls
+	for side: float in [-1.0, 1.0]:
+		var scr := Props.scoreboard(self, Vector3(side * 5.55, 2.3, -4.0), -side * PI * 0.5, Vector2(2.6, 1.4), "LANE 5", false)
+		scr.text = "VECTOR BOWL"
+		if side > 0.0:
+			monitor = scr
+		else:
+			scr.set_meta("mirror", true)
+			monitor_l = scr
+	# ball returns between the lanes, with a rack of colourful balls
+	for side: float in [-1.0, 1.0]:
+		var x := side * LANE_PITCH * 1.5
+		var hood := MeshInstance3D.new()
+		var hm := CapsuleMesh.new()
+		hm.radius = 0.32
+		hm.height = 1.4
+		hood.mesh = hm
+		hood.material_override = Character.material(Color("2b6cb0"), 0.3)
+		hood.rotation.x = PI * 0.5
+		hood.scale = Vector3(1.0, 1.0, 0.75)
+		hood.position = Vector3(x, 0.3, 1.6)
+		add_child(hood)
+		var rack := MeshInstance3D.new()
+		var rb := BoxMesh.new()
+		rb.size = Vector3(0.42, 0.08, 1.3)
+		rack.mesh = rb
+		rack.material_override = Character.material(Color("c9ced4"), 0.3)
+		rack.position = Vector3(x, 0.55, 2.9)
+		add_child(rack)
+		var cols := [Color("e23d3d"), Color("7a3fd6"), Color("1fa36b"), Color("f0a020")]
+		for i in 4:
+			var b := MeshInstance3D.new()
+			var bs := SphereMesh.new()
+			bs.radius = 0.108
+			bs.height = 0.216
+			b.mesh = bs
+			var bmat := Character.material(cols[(i + int(side + 1.0)) % 4], 0.15)
+			b.material_override = bmat
+			b.position = Vector3(x, 0.7, 2.4 + i * 0.28)
+			add_child(b)
+	# other people bowling on the neighbouring lanes
+	var spots := [Vector3(-LANE_PITCH * 2, 0, 2.2), Vector3(LANE_PITCH, 0, 3.4), Vector3(LANE_PITCH * 2 + 0.4, 0, 4.0)]
+	for i in spots.size():
+		var c := Character.new()
+		c.outfit = "bowling"
+		c.look_seed = 900 + i
+		c.shirt = [Color("e8574a"), Color("3fae5d"), Color("8d6fd6")][i]
+		c.bowling = true
+		c.shadows = false
+		add_child(c)
+		c.position = spots[i]
+		c.rotation.y = [0.0, 0.4, PI * 0.85][i]
+		c.swing_angle = [0.3, -0.1, 0.0][i]
+
+
 func _build_environment() -> void:
-	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("f2ead8")
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("fff3e0")
-	env.ambient_light_energy = 0.75
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 0.95
-	env.glow_enabled = true
-	env.glow_intensity = 0.3
-	env.glow_hdr_threshold = 1.3
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	var key := DirectionalLight3D.new()
+	var key := Look.setup(self, "indoor", 30.0)
 	key.light_energy = 0.75
-	key.light_color = Color("fff4e2")
-	key.shadow_enabled = true
-	key.directional_shadow_max_distance = 30.0
-	key.rotation = Vector3(deg_to_rad(-62), deg_to_rad(12), 0)
-	add_child(key)
 	var pin_light := SpotLight3D.new()
 	pin_light.light_energy = 1.6
 	pin_light.spot_range = 5.0

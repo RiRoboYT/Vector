@@ -4,6 +4,35 @@ A motion-controlled sports game for Windows: your phone (iPhone or Android) is t
 
 **Available now: Bowling** (1–8 players, 10 frames, real pin physics) **Cricket** (1–8 players, Super Over / 2 / 5 overs, real ball, bat and fielding physics) and **Tennis** (doubles, 1–4 players, 1 / 3 / 5 games, real ball spin and bounce). Golf and Baseball are placeholders in the menu.
 
+## Graphics
+
+- **Quality presets:** Low, Medium and High. The game picks one on first launch based on the graphics card, and you can change it with the *Graphics* button on the sports menu. The choice is saved.
+  - **Low:** no glow or ambient occlusion, hard shadows, 3D rendered at 80 % and sharpened. For integrated graphics.
+  - **Medium:** glow, soft shadows, 2× anti-aliasing, lane reflections.
+  - **High:** adds ambient occlusion and bounce light, 4× anti-aliasing and sharper shadows. Tuned for a GTX 1050 class card at 1080p.
+  - On 1440p and 4K TVs the 3D view is upscaled with FSR at every preset.
+- **Renderer:** Forward+ (Vulkan), with automatic fallback to OpenGL on PCs without Vulkan.
+- **Look:** cartoon skies with drifting clouds, a colour grade per venue (evening cricket, bright tennis, warm indoor bowling), shared lighting in [`look.gd`](godot_project/scripts/look.gd).
+- **Characters:**
+  - Faces with blinking eyes, eyebrows, cheeks and mouths that change with the mood.
+  - Six hairstyles, a range of skin tones, mitten hands and trainers.
+  - Outfits per sport (bowling shirts, cricket whites, tennis polos with headbands, umpires).
+  - Cheer and slump reactions.
+  - Each player name always gives the same person in every sport.
+- **Venues:**
+  - **Bowling:** a glossy reflective lane, neon signs, wall score screens, ball returns and other bowlers.
+  - **Cricket:** a stadium crowd that jumps on fours, sixes and wickets, and sponsor boards with made-up brands.
+  - **Tennis:** a worn court surface, line judges, ball kids, a live scoreboard and a cheering crowd.
+- **Presentation:**
+  - An intro flyover for tennis.
+  - Slow motion for big moments: pin action, middled cricket shots, big serves.
+  - Dust puffs, impact sparks, and confetti for strikes and results.
+- **Menus:**
+  - A live 3D floating island behind the menus.
+  - Wipe transitions and buttons that pop in.
+  - An animated title.
+  - A loading card with a tip before each match.
+
 ## Tennis
 
 Doubles on an outdoor hard court, always two against two. Players run to the ball on their own; you only swing.

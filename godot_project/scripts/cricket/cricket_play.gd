@@ -134,6 +134,7 @@ func make_mover(name: String, shirt: Color, home: Vector3, shadows := true) -> M
 	m.ch = Character.new()
 	m.ch.shirt = shirt
 	m.ch.pants = Color(0.95, 0.95, 0.95)
+	m.ch.outfit = "cricket"
 	m.ch.hand_targets = true
 	m.ch.shadows = shadows
 	add_child(m.ch)
@@ -149,6 +150,7 @@ func make_runner(name: String, shirt: Color, end: int) -> Runner:
 	r.ch = Character.new()
 	r.ch.shirt = shirt
 	r.ch.pants = Color(0.95, 0.95, 0.95)
+	r.ch.outfit = "cricket"
 	r.ch.hand_targets = true
 	add_child(r.ch)
 	r.bat = CricketBat.new()

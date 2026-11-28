@@ -112,6 +112,8 @@ func _make_players() -> void:
 		var team := i / 2
 		p.setup(team, i % 2, TEAM_COLORS[team], names[i])
 		p.pid = ctl[i]
+		if i % 2 == 1 and names[i] == names[i - 1]:
+			p.character.look_seed += 977 # same controller, different person
 		add_child(p)
 		players.append(p)
 	for team in 2:
@@ -135,8 +137,18 @@ func team_human(team: int) -> bool:
 
 # ------------------------------------------------------------------ points
 
+func _update_scoreboard() -> void:
+	var rows := []
+	for t in 2:
+		rows.append("%s   %d   %s" % [str(team_names[t]).left(14).to_upper(), score.games[t], score.point_label(t)])
+	court.set_scoreboard("\n".join(rows))
+
+
 func _setup_point() -> void:
+	_update_scoreboard()
 	ball.kill()
+	for p in players:
+		p.character.reaction = ""
 	_place_for_serve()
 	phase = Phase.SERVE
 	_t = 0.0
@@ -291,6 +303,8 @@ func _serve(power: float, timing: float) -> void:
 	Sfx.pin_hit(0.9)
 	_haptic(server, "hit")
 	hud.speed_info("%d km/h" % roundi(speed * 3.6))
+	if speed * 3.6 > 175.0:
+		Fx.slowmo(get_tree(), 0.45, 0.35) # big serve
 	_assign_receiver()
 
 
@@ -557,6 +571,7 @@ func _human_swing(pid: String, peak: float, dpitch: float, peak_ms := -1) -> voi
 func _on_bounce(pos: Vector3) -> void:
 	if phase != Phase.RALLY:
 		return
+	Fx.puff(self, pos + Vector3(0, 0.03, 0), Color(0.9, 0.94, 1.0, 0.55), 8, 0.14, 0.9)
 	if OS.get_environment("VS_DEBUG") != "":
 		print("    bounce %d at (%.1f, %.1f) hitter t%d serve=%s" % [ball.bounces, pos.x, pos.z, hitter_team, _is_serve])
 	var side := 0 if pos.z > 0.0 else 1 # team whose half it bounced in
@@ -597,6 +612,10 @@ func _point_to(team: int, call: String) -> void:
 	_t = 0.0
 	ball.kill()
 	var res := score.point_to(team)
+	for p in players:
+		p.character.reaction = "cheer" if p.team == team else "sad"
+	_update_scoreboard()
+	Crowd.cheer(1.0 if res != "point" else (0.8 if call in ["Ace!", "Winner!"] else 0.35))
 	print("[tennis] %s -> point %s (%s)  games %d-%d" % [call, team_names[team], res, score.games[0], score.games[1]])
 	var msg := call
 	if res == "game":
@@ -665,6 +684,14 @@ func _cam_for(team: int) -> Array:
 
 func _update_camera(delta: float) -> void:
 	var c := _cam_for(0)
+	if phase == Phase.INTRO:
+		# opening flyover: sweep in from high over the stands to behind the baseline
+		var k := smoothstep(0.0, 2.0, _t)
+		var a := lerpf(-1.4, 0.0, k)
+		_cam_pos = Vector3(sin(a) * lerpf(34.0, 23.5, k), lerpf(18.0, 7.4, k), cos(a) * lerpf(34.0, 23.5, k))
+		_cam_look = Vector3(0, 0, lerpf(0.0, -2.0, k))
+		camera.look_at_from_position(_cam_pos, _cam_look)
+		return
 	var k := 1.0 - exp(-delta * 3.0)
 	_cam_pos = _cam_pos.lerp(c[0], k)
 	_cam_look = _cam_look.lerp(c[1], k)

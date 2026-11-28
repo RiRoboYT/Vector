@@ -137,47 +137,7 @@ func _ready() -> void:
 
 
 func _environment() -> void:
-	var env := Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.26, 0.48, 0.82)
-	sky_mat.sky_horizon_color = Color(0.72, 0.80, 0.90)
-	sky_mat.sky_curve = 0.12
-	sky_mat.ground_horizon_color = Color(0.72, 0.80, 0.90)
-	sky_mat.ground_bottom_color = Color(0.25, 0.32, 0.22)
-	sky_mat.sun_angle_max = 25.0
-	sky_mat.sun_curve = 0.1
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.55
-	env.ambient_light_sky_contribution = 0.85
-	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 0.98
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.15
-	env.adjustment_contrast = 1.04
-	env.glow_enabled = true
-	env.glow_intensity = 0.25
-	env.glow_hdr_threshold = 1.3
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.78, 0.86, 0.96)
-	env.fog_density = 0.0011
-	env.fog_aerial_perspective = 0.2
-	env.fog_sky_affect = 0.0
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.light_energy = 1.35
-	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_angular_distance = 1.2 # soft shadow edges
-	sun.shadow_enabled = true
-	sun.shadow_blur = 1.4
-	sun.directional_shadow_max_distance = 70.0
-	sun.rotation = Vector3(deg_to_rad(-42), deg_to_rad(30), 0)
-	add_child(sun)
+	Look.setup(self, "evening", 70.0)
 
 
 func _ground() -> void:
@@ -355,6 +315,16 @@ func _circle_and_rope() -> void:
 		var p := CENTER + Vector3(cos(a) * (BOUNDARY + 4.0), 0.45, sin(a) * (BOUNDARY + 4.0))
 		boards.set_instance_transform(i, Transform3D(Basis(Vector3.UP, -a + PI * 0.5), p))
 		boards.set_instance_color(i, cols[i % cols.size()])
+	# brand names on every other board (the rest stay plain colours)
+	for i in range(0, n, 2):
+		var a2 := TAU * i / n
+		var p2 := CENTER + Vector3(cos(a2) * (BOUNDARY + 3.92), 0.45, sin(a2) * (BOUNDARY + 3.92))
+		var l := Props.label(Props.BRANDS[(i / 2) % Props.BRANDS.size()], 96, Color.WHITE if i % 4 != 2 else Color("1f5fae"))
+		l.pixel_size = 0.0045
+		l.position = p2
+		l.look_at_from_position(p2, CENTER + Vector3(0, 0.45, 0), Vector3.UP)
+		l.rotate_object_local(Vector3.UP, PI) # Label3D reads from +Z
+		add_child(l)
 	var bmi := MultiMeshInstance3D.new()
 	bmi.multimesh = boards
 	var bmat := StandardMaterial3D.new()
@@ -416,35 +386,21 @@ func _stands() -> void:
 	sm.cull_mode = BaseMaterial3D.CULL_DISABLED
 	stands.material_override = sm
 	add_child(stands)
-	# crowd
-	var crowd := MultiMesh.new()
-	crowd.transform_format = MultiMesh.TRANSFORM_3D
-	crowd.use_colors = true
-	var cm := CapsuleMesh.new()
-	cm.radius = 0.19
-	cm.height = 0.8
-	cm.radial_segments = 6
-	cm.rings = 2
-	crowd.mesh = cm
+	# crowd: real seats on each step, facing the middle
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 33
-	var count := 5200
-	crowd.instance_count = count
-	var shirt_cols := [Color("e8574a"), Color("2b8fd6"), Color("f2f2f2"), Color("f0a020"), Color("3fae5d"), Color("2b2f36"), Color("8d6fd6"), Color("e86fa3"), Color("1f5fae"), Color("d9c7a3")]
-	for i in count:
-		var row := rng.randi_range(0, steps - 2)
-		var ang := rng.randf() * TAU
+	var seats: Array[Vector3] = []
+	var yaws := PackedFloat32Array()
+	for row in steps - 1:
 		var r := r0 + row * 1.6 + 0.8
-		var y := 1.0 + row * 0.9 + 0.45
-		crowd.set_instance_transform(i, Transform3D(Basis.IDENTITY, CENTER + Vector3(cos(ang) * r, y, sin(ang) * r)))
-		crowd.set_instance_color(i, shirt_cols[rng.randi() % shirt_cols.size()])
-	var cmi := MultiMeshInstance3D.new()
-	cmi.multimesh = crowd
-	var cmat := StandardMaterial3D.new()
-	cmat.vertex_color_use_as_albedo = true
-	cmi.material_override = cmat
-	cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(cmi)
+		var y := 1.0 + row * 0.9
+		var n := int(TAU * r / 0.74)
+		for k in n:
+			if rng.randf() < 0.72:
+				var ang := TAU * (k + rng.randf_range(-0.1, 0.1)) / n
+				seats.append(CENTER + Vector3(cos(ang) * r, y, sin(ang) * r))
+				yaws.append(PI * 0.5 - ang) # -Z towards the centre
+	Crowd.build(self, seats, yaws, 33, 1.2)
 	# roof canopy over the stands (casts shade on the crowd)
 	var roof_st := SurfaceTool.new()
 	roof_st.begin(Mesh.PRIMITIVE_TRIANGLES)

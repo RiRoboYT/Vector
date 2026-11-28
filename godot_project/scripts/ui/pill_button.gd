@@ -13,6 +13,15 @@ signal pressed
 
 var hovered := false
 var _scale := 1.0
+var _life := 0.0
+var _delay := 0.0
+var _press := 0.0
+## Buttons pop in one after another when a screen opens.
+static var _stagger := 0.0
+
+
+static func reset_stagger() -> void:
+	_stagger = 0.08
 
 
 func _init(p_text := "", p_size := Vector2(300, 80)) -> void:
@@ -22,18 +31,31 @@ func _init(p_text := "", p_size := Vector2(300, 80)) -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 
+func _ready() -> void:
+	_delay = _stagger
+	_stagger = minf(_stagger + 0.05, 0.6)
+
+
 func _process(delta: float) -> void:
+	_life += delta
+	_press = maxf(0.0, _press - delta * 4.0)
 	var was := hovered
 	hovered = is_visible_in_tree() and Pad.pointer_visible and get_global_rect().has_point(Pad.pointer)
 	if hovered and not was and enabled:
 		Sfx.click(0.45, 1.25)
 	if hovered and enabled and Pad.just_pressed(Pad.A):
 		Sfx.click(1.0, 1.0)
+		_press = 1.0
 		pressed.emit()
 	var target := 1.06 if hovered and enabled else 1.0
 	_scale = lerpf(_scale, target, 1.0 - exp(-delta * 18.0))
 	pivot_offset = size * 0.5
-	scale = Vector2.ONE * _scale
+	# pop-in (ease out back) and a little squash when pressed
+	var k := clampf((_life - _delay) / 0.32, 0.0, 1.0)
+	var x := k - 1.0
+	var pop := 1.0 + 2.7 * x * x * x + 1.7 * x * x
+	modulate.a = k
+	scale = Vector2.ONE * _scale * pop * (1.0 - sin(_press * PI) * 0.06)
 	queue_redraw()
 
 

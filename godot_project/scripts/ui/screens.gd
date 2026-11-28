@@ -20,12 +20,18 @@ func _process(delta: float) -> void:
 
 
 static var _stripes: Texture2D
+## True while the live 3D menu backdrop is showing behind the screens.
+static var backdrop := false
 
 
 func draw_stripes() -> void:
 	if _stripes == null:
 		_stripes = UI.stripes_texture()
-	draw_texture_rect(_stripes, Rect2(Vector2.ZERO, size), true)
+	if backdrop:
+		# frosted pinstripe glass over the 3D island
+		draw_texture_rect(_stripes, Rect2(Vector2.ZERO, size), true, Color(1, 1, 1, 0.5))
+	else:
+		draw_texture_rect(_stripes, Rect2(Vector2.ZERO, size), true)
 
 
 ## "Press (A) to ..." line with a drawn A badge, centred at y.

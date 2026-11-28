@@ -88,6 +88,7 @@ func delivery_info(t: String) -> void:
 
 
 func show_results(g: CricketGame) -> void:
+	add_child(Confetti.new())
 	_view.results = true
 	_final.visible = true
 

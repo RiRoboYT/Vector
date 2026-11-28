@@ -34,8 +34,8 @@ static func in_service_box(p: Vector3, server_side: int, deuce: bool) -> bool:
 const COURT_SHADER := """
 shader_type spatial;
 render_mode specular_schlick_ggx;
-uniform vec3 inner : source_color = vec3(0.17, 0.38, 0.62);
-uniform vec3 outer : source_color = vec3(0.20, 0.46, 0.33);
+uniform vec3 inner : source_color = vec3(0.19, 0.44, 0.74);
+uniform vec3 outer : source_color = vec3(0.21, 0.53, 0.38);
 varying vec3 wpos;
 void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -50,8 +50,11 @@ void fragment() {
 	// acrylic surface: fine sandy grain + slightly worn behind the baselines
 	float aa = clamp(1.0 - length(fwidth(p)) * 30.0, 0.0, 1.0);
 	c *= 1.0 + (noise(p * 90.0) - 0.5) * 0.1 * aa + (noise(p * 2.0) - 0.5) * 0.05;
-	float wear = (1.0 - smoothstep(0.0, 2.5, abs(abs(p.y) - 12.4))) * (1.0 - smoothstep(0.0, 3.0, abs(p.x)));
-	c = mix(c, c * 1.12, wear * 0.4);
+	// scuffed, faded patches where players stand: behind the baselines and at the T
+	float wear = (1.0 - smoothstep(0.0, 2.2, abs(abs(p.y) - 12.6))) * (1.0 - smoothstep(0.5, 3.5, abs(p.x)));
+	wear += (1.0 - smoothstep(0.0, 1.2, length(vec2(p.x, abs(p.y) - 6.4)))) * 0.5;
+	wear *= 0.6 + noise(p * 3.0) * 0.8;
+	c = mix(c, mix(c, vec3(dot(c, vec3(0.33))), 0.35) * 1.18, clamp(wear, 0.0, 1.0) * 0.55);
 	ALBEDO = c;
 	ROUGHNESS = 0.7;
 	SPECULAR = 0.35;
@@ -77,47 +80,11 @@ func _ready() -> void:
 	_lines()
 	_net()
 	_surroundings()
+	_extras()
 
 
 func _environment() -> void:
-	var env := Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.22, 0.47, 0.85)
-	sky_mat.sky_horizon_color = Color(0.70, 0.82, 0.94)
-	sky_mat.sky_curve = 0.12
-	sky_mat.ground_horizon_color = Color(0.70, 0.82, 0.94)
-	sky_mat.ground_bottom_color = Color(0.25, 0.33, 0.22)
-	sky_mat.sun_angle_max = 25.0
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.6
-	env.tonemap_mode = Environment.TONE_MAPPER_AGX
-	env.tonemap_exposure = 1.0
-	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.18
-	env.adjustment_contrast = 1.04
-	env.glow_enabled = true
-	env.glow_intensity = 0.25
-	env.glow_hdr_threshold = 1.3
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.78, 0.86, 0.96)
-	env.fog_density = 0.0012
-	env.fog_aerial_perspective = 0.2
-	var we := WorldEnvironment.new()
-	we.environment = env
-	add_child(we)
-	var sun := DirectionalLight3D.new()
-	sun.light_energy = 1.35
-	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_angular_distance = 1.2
-	sun.shadow_enabled = true
-	sun.shadow_blur = 1.3
-	sun.directional_shadow_max_distance = 60.0
-	sun.rotation = Vector3(deg_to_rad(-48), deg_to_rad(28), 0)
-	add_child(sun)
+	Look.setup(self, "day", 60.0)
 
 
 func _ground() -> void:
@@ -290,6 +257,7 @@ func _surroundings() -> void:
 	var ump := Character.new()
 	ump.shirt = Color("f2f2f2")
 	ump.pants = Color("2b2f36")
+	ump.outfit = "umpire"
 	ump.hand_targets = true
 	chair.add_child(ump)
 	ump.position = Vector3(0, 1.0, 0)
@@ -343,35 +311,12 @@ func _panel(pos: Vector3, size: Vector3, c: Color) -> void:
 	add_child(mi)
 
 
-const CROWD_SHADER := """
-shader_type spatial;
-uniform float time_scale = 1.0;
-varying float shade;
-void vertex() {
-	// each spectator bobs a little; some cheer (bigger hops)
-	float id = INSTANCE_CUSTOM.x;
-	float cheer = step(0.82, fract(id * 7.31));
-	float hop = sin(TIME * (2.0 + cheer * 4.0) + id * 31.0) * (0.015 + cheer * 0.05);
-	VERTEX.y += max(hop, -0.01);
-	shade = 0.9 + fract(id * 3.7) * 0.1;
-}
-void fragment() {
-	ALBEDO = COLOR.rgb * shade;
-	ROUGHNESS = 0.85;
-}
-"""
-
-
-## Seated spectators: a shirt-coloured body and a head on every seat
-## (a few empty), as two MultiMeshes so it stays cheap.
+## Seated spectators on one long side (shared Crowd builder).
 func _crowd(side: float, rx: float, rz: float) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 41 + int(side)
-	var shirts := [Color("e8574a"), Color("2b8fd6"), Color("f2f2f2"), Color("f0a020"), Color("3fae5d"), Color("2b2f36"), Color("8d6fd6"), Color("e86fa3"), Color("31b8e8"), Color("f5d33b")]
-	var skins := [Color(1.0, 0.84, 0.7), Color(0.94, 0.74, 0.58), Color(0.78, 0.56, 0.4), Color(0.55, 0.38, 0.26), Color(1.0, 0.88, 0.78)]
-	var hairs := [Color("2a2220"), Color("4a3328"), Color("7a5232"), Color("c8a060"), Color("1a1a1a"), Color("9a9a9a")]
 	var seats: Array[Vector3] = []
-	var spacing := 0.62
+	var yaws := PackedFloat32Array()
 	for row in 9:
 		var x := side * (rx + 1.55 + row * 1.2)
 		var y := 0.6 + row * 0.75
@@ -379,51 +324,41 @@ func _crowd(side: float, rx: float, rz: float) -> void:
 		while z < rz - 0.5:
 			if rng.randf() < 0.88:
 				seats.append(Vector3(x, y, z + rng.randf_range(-0.06, 0.06)))
-			z += spacing
-	var face := Basis(Vector3.UP, -side * PI * 0.5) # look towards the court
-	var mm := func(mesh: Mesh) -> MultiMesh:
-		var m := MultiMesh.new()
-		m.transform_format = MultiMesh.TRANSFORM_3D
-		m.use_colors = true
-		m.use_custom_data = true
-		m.mesh = mesh
-		m.instance_count = seats.size()
-		return m
-	var body := CapsuleMesh.new()
-	body.radius = 0.2
-	body.height = 0.62
-	body.radial_segments = 8
-	body.rings = 2
-	var head := SphereMesh.new()
-	head.radius = 0.135
-	head.height = 0.27
-	head.radial_segments = 10
-	head.rings = 6
-	var hair := SphereMesh.new()
-	hair.radius = 0.145
-	hair.height = 0.17
-	hair.is_hemisphere = true
-	hair.radial_segments = 10
-	hair.rings = 4
-	var bodies: MultiMesh = mm.call(body)
-	var heads: MultiMesh = mm.call(head)
-	var hairm: MultiMesh = mm.call(hair)
-	for i in seats.size():
-		var p := seats[i]
-		var id := float(i) + side * 1000.0
-		var lean := Basis(Vector3.FORWARD, rng.randf_range(-0.08, 0.08))
-		bodies.set_instance_transform(i, Transform3D(face * lean, p + Vector3(0, 0.36, 0)))
-		bodies.set_instance_color(i, shirts[rng.randi() % shirts.size()])
-		heads.set_instance_transform(i, Transform3D(face, p + Vector3(0, 0.82, 0)))
-		heads.set_instance_color(i, skins[rng.randi() % skins.size()])
-		hairm.set_instance_transform(i, Transform3D(face, p + Vector3(0, 0.86, 0)))
-		hairm.set_instance_color(i, hairs[rng.randi() % hairs.size()])
-		for m: MultiMesh in [bodies, heads, hairm]:
-			m.set_instance_custom_data(i, Color(id * 0.013, 0, 0, 0))
-	var mat := CricketField._shader_mat(CROWD_SHADER)
-	for m: MultiMesh in [bodies, heads, hairm]:
-		var mi := MultiMeshInstance3D.new()
-		mi.multimesh = m
-		mi.material_override = mat
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		add_child(mi)
+				yaws.append(side * PI * 0.5)
+			z += 0.62
+	Crowd.build(self, seats, yaws, 41 + int(side))
+
+
+## Officials, ball kids, sponsor boards and the scoreboard.
+var scoreboard: Label3D
+
+
+func _extras() -> void:
+	var rx := HALF_W_DOUBLES + 4.2
+	var rz := HALF_L + 7.0
+	# sponsor names on the end walls (facing the court)
+	for zs: float in [-1.0, 1.0]:
+		for i in 3:
+			var x := lerpf(-rx, rx, (i * 2 + 1) / 6.0)
+			var xf := Transform3D(Basis(Vector3.UP, PI if zs < 0 else 0.0), Vector3(x, 0.5, zs * (rz - 0.12)))
+			Props.board(self, xf, Vector3(rx * 2.0 / 3.0 - 0.3, 0.8, 0.06), Color("1f5fae") if i != 1 else Color("31b8e8"), Props.BRANDS[(i + (3 if zs > 0 else 0)) % Props.BRANDS.size()])
+	# line judges: by the sidelines near each baseline, and behind the baselines
+	var seed := 300
+	for zs: float in [-1.0, 1.0]:
+		for xs: float in [-1.0, 1.0]:
+			Props.official(self, Vector3(xs * (HALF_W_DOUBLES + 2.6), 0, zs * (HALF_L - 2.0)), Vector3(0, 0, zs * (HALF_L - 2.0)), Color("1f3a5f"), seed)
+			seed += 1
+		Props.official(self, Vector3(3.2, 0, zs * (HALF_L + 5.8)), Vector3(3.2, 0, 0), Color("1f3a5f"), seed)
+		seed += 1
+	# ball kids crouched at the net posts
+	for xs: float in [-1.0, 1.0]:
+		var kid := Props.official(self, Vector3(xs * (HALF_W_DOUBLES + 1.3), 0, 0.9 * xs), Vector3(0, 0, 0.9 * xs), Color("8d6fd6"), seed, 0.72)
+		kid.crouch = 0.12
+		seed += 1
+	# scoreboard behind the far baseline
+	scoreboard = Props.scoreboard(self, Vector3(-rx + 3.5, 4.2, -rz - 2.5), 0.0, Vector2(6.0, 2.6))
+
+
+func set_scoreboard(text: String) -> void:
+	if scoreboard:
+		scoreboard.text = text

@@ -17,6 +17,8 @@ var _calib: CalibrationScreen
 var _calib_then: Callable
 var _keyboard_ok := false
 var _fade: ColorRect
+var _wipe: Wipe
+var _backdrop: MenuBackdrop
 var _cursor: CursorView
 var _connect: ConnectCard
 var _toast: Label
@@ -71,6 +73,8 @@ func _ready() -> void:
 	_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_top.add_child(_fade)
+	_wipe = Wipe.new()
+	_top.add_child(_wipe)
 	_cursor = CursorView.new()
 	_top.add_child(_cursor)
 
@@ -91,7 +95,9 @@ func _ready() -> void:
 			start = arg.get_slice("=", 1)
 	match start:
 		"home": go_home()
+		"title": go_title()
 		"sports": go_sports()
+		"loading": _loading("Tennis", func(): pass)
 		"lobby": go_lobby()
 		"tutorial": go_tutorial()
 		"cricket":
@@ -124,16 +130,10 @@ func _ready() -> void:
 
 
 func _setup_display_scaling() -> void:
-	# UI scales cleanly (canvas_items); for 1440p / 4K render 3D a little lower
-	# and upscale with FSR so it stays smooth on modest laptops.
-	var h := DisplayServer.screen_get_size().y
-	var vp := get_viewport()
-	if h >= 2000:
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
-		vp.scaling_3d_scale = 0.6
-	elif h >= 1400:
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
-		vp.scaling_3d_scale = 0.77
+	# UI scales cleanly (canvas_items). 3D render scale, anti-aliasing and
+	# shadows follow the graphics quality (Look), upscaled with FSR on big TVs.
+	Look.apply_viewport(get_viewport())
+	print("[graphics] %s on %s -> quality %s" % [RenderingServer.get_current_rendering_method(), RenderingServer.get_video_adapter_name(), Look.NAMES[Look.get_quality()]])
 
 
 # ------------------------------------------------------------------ flow
@@ -336,7 +336,14 @@ func ready_then(sport: String, then: Callable) -> void:
 	var s := ReadyScreen.new()
 	s.roster = roster
 	s.sport = sport
-	s.done.connect(func(_a): calibrate_all(then))
+	s.done.connect(func(_a): calibrate_all(func(): _loading(sport, then)))
+	_switch(s)
+
+
+func _loading(sport: String, then: Callable) -> void:
+	var s := LoadingScreen.new()
+	s.sport = sport
+	s.done.connect(func(_a): then.call())
 	_switch(s)
 
 
@@ -414,11 +421,14 @@ func _on_message(cid: int, msg: Dictionary) -> void:
 
 func _switch(node: Node) -> void:
 	var tw := create_tween()
-	tw.tween_property(_fade, "color:a", 1.0, 0.15 if _screen else 0.0)
+	if _screen:
+		tw.tween_property(_wipe, "progress", 1.0, 0.28).from(0.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_IN)
 	tw.tween_callback(func():
 		if _screen:
 			_screen.queue_free()
 		_screen = node
+		PillButton.reset_stagger()
+		_update_backdrop(node)
 		if node is Control:
 			_ui.add_child(node)
 		else:
@@ -428,7 +438,23 @@ func _switch(node: Node) -> void:
 			if _calib == null:
 				server.broadcast({"type": "turn", "mine": true, "text": ""})
 				server.broadcast({"type": "hint", "text": _screen_hint}))
-	tw.tween_property(_fade, "color:a", 0.0, 0.25)
+	if _fade.color.a > 0.0:
+		tw.tween_property(_fade, "color:a", 0.0, 0.25)
+	else:
+		tw.tween_property(_wipe, "progress", 2.0, 0.34).from(1.0).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
+
+## Live 3D island behind the menus; removed while a game is running.
+func _update_backdrop(node: Node) -> void:
+	var want := node is Screen and not (node is TutorialScreen or node is SafetyScreen)
+	Screen.backdrop = want
+	if want and _backdrop == null:
+		_backdrop = MenuBackdrop.new()
+		add_child(_backdrop)
+		move_child(_backdrop, 0)
+	elif not want and _backdrop != null:
+		_backdrop.queue_free()
+		_backdrop = null
 
 
 func toast(text: String, secs := 2.0) -> void:
