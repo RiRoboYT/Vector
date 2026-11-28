@@ -28,6 +28,7 @@ var _qr_tex: Texture2D
 var _url := ""
 var _tutorial_seen := false
 var _cricket_tutorial_seen := false
+var _tennis_tutorial_seen := false
 var _screen_hint := ""
 
 
@@ -96,6 +97,16 @@ func _ready() -> void:
 		"cricket":
 			roster.lobby_open = false
 			go_cricket()
+		"tennis":
+			roster.lobby_open = false
+			for arg in OS.get_cmdline_user_args(): # test helper: --test-players=A,B
+				if arg.begins_with("--test-players="):
+					for n in arg.get_slice("=", 1).split(","):
+						var tp := Players.Player.new()
+						tp.pid = "test_" + n
+						tp.name = n
+						roster.players.append(tp)
+			go_tennis()
 		"bowling":
 			roster.lobby_open = false
 			for arg in OS.get_cmdline_user_args(): # test helper: --test-players=A,B,C
@@ -177,6 +188,11 @@ func go_lobby(sport := "bowling") -> void:
 			roster.ensure_keyboard_player()
 			roster.refresh()
 			go_cricket_options()
+		elif sport == "tennis":
+			roster.lobby_open = false
+			roster.ensure_keyboard_player()
+			roster.refresh()
+			go_tennis_options()
 		else:
 			_start_from_lobby())
 	_switch(s)
@@ -205,6 +221,44 @@ func go_cricket_options() -> void:
 				start.call())
 			_switch(t))
 	_switch(s)
+
+
+func go_tennis_options() -> void:
+	var s := TennisOptions.new()
+	s.roster = roster
+	s.done.connect(func(a):
+		if a == "back":
+			go_lobby("tennis")
+			return
+		var gm: int = s.games
+		var d: int = s.difficulty
+		var start := func(): ready_then("Tennis", func(): go_tennis(gm, d))
+		if _tennis_tutorial_seen:
+			start.call()
+		else:
+			var t := TutorialScreen.new()
+			t.pages = TutorialScreen.TENNIS
+			t.title = "How to play tennis"
+			t.finish_text = "Let's play!"
+			t.done.connect(func(_x):
+				_tennis_tutorial_seen = true
+				start.call())
+			_switch(t))
+	_switch(s)
+
+
+func go_tennis(games := 1, difficulty := 1) -> void:
+	var g := TennisGame.new()
+	g.roster = roster
+	g.total_games = games
+	g.difficulty = difficulty
+	g.finished.connect(func(a):
+		if a == "again":
+			ready_then("Tennis", func(): go_tennis(games, difficulty))
+		else:
+			go_sports())
+	g.phone_message.connect(_route_game_message)
+	_switch(g)
 
 
 func _open_lobby_state() -> void:
@@ -409,6 +463,8 @@ func _process(delta: float) -> void:
 		Pad.pointer_visible = (_screen as BowlingGame).state == BowlingGame.State.OVER
 	elif _screen is CricketGame:
 		Pad.pointer_visible = (_screen as CricketGame).phase == CricketGame.Phase.OVER
+	elif _screen is TennisGame:
+		Pad.pointer_visible = (_screen as TennisGame).phase == TennisGame.Phase.OVER
 	_cursor.visible = Pad.pointer_visible
 	_connect.want_visible = not connected and not (_screen is LobbyScreen)
 	_connect.compact = not (_calib != null or _screen is SafetyScreen or _screen is HomeScreen)
@@ -453,6 +509,8 @@ func _maybe_screenshot() -> void:
 	await get_tree().create_timer(delay).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
+	if OS.get_cmdline_user_args().has("--quit"):
+		get_tree().quit()
 
 
 # ------------------------------------------------------------ small views

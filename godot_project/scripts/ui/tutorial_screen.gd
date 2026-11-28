@@ -21,6 +21,13 @@ const CRICKET := [
 	["Bowling: half swing", "Grip the phone and make a short bowling swing.\nStraight = no swing. Angle it left or right to swing\nthe ball that way. Twist your wrist to spin it.", "halfswing"],
 ]
 
+const TENNIS := [
+	["Hold it like a racket", "Hold your phone like a racket handle,\nscreen facing the TV. Your player runs\nto the ball by themselves.", "racket"],
+	["Swing to hit", "Swing as the ball reaches your player.\nForehand or backhand is automatic.\nA faster swing hits harder.", "racket"],
+	["Aim with timing", "Early = cross-court, late = down the line.\nLow-to-high = topspin, high-to-low = slice.\nSlow flick up = lob, slow chop = drop shot.", "racket"],
+	["Serve", "Tap B to toss the ball, then swing\nover your head as it reaches the top.\nTwo faults = double fault!", "serve"],
+]
+
 var pages: Array = BOWLING
 var title := "How to bowl"
 var finish_text := "Let's bowl!"
@@ -134,6 +141,27 @@ func _draw() -> void:
 			draw_line(piv + Vector2(0, -40), piv + Vector2(0, -40) + dir * 170.0, orange, 8.0, true)
 			var lab := "straight: no swing" if side == 0.0 else ("angled left: swings left" if side < 0.0 else "angled right: swings right")
 			draw_string(UI.bold(), pc + Vector2(-150, 250), lab, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, UI.INK)
+		"racket", "serve":
+			var serve := hl == "serve"
+			var a3 := sin(_t * 2.4) * (0.8 if not serve else 1.0)
+			var piv := pc + Vector2(0, 120 if not serve else 160)
+			draw_set_transform(piv, a3 + (0.0 if not serve else -0.2), Vector2.ONE)
+			# racket head above the phone handle
+			var head := Vector2(0, -300)
+			draw_set_transform(piv, a3, Vector2(1, 1))
+			draw_circle(head, 86, Color(1, 1, 1, 0.7))
+			for k in range(-4, 5):
+				draw_line(head + Vector2(k * 17, -80 + absf(k) * 4.0), head + Vector2(k * 17, 80 - absf(k) * 4.0), Color("c8d2dc"), 2.0)
+				draw_line(head + Vector2(-80 + absf(k) * 4.0, k * 17), head + Vector2(80 - absf(k) * 4.0, k * 17), Color("c8d2dc"), 2.0)
+			draw_arc(head, 86, 0, TAU, 48, Color("31b8e8"), 10.0, true)
+			draw_line(Vector2(0, -214), Vector2(0, -150), Color("31b8e8"), 10.0)
+			draw_phone(Vector2(0, -60), 200, "B" if serve else "")
+			draw_set_transform(Vector2.ZERO, 0, Vector2.ONE)
+			draw_arc(piv, 330, -PI * 0.5 - 0.8, -PI * 0.5 + 0.8, 32, orange, 8.0, true)
+			var by := pc.y - 220.0 - (absf(sin(_t * 1.2)) * 120.0 if serve else 0.0)
+			var bx := pc.x + (0.0 if serve else 260.0 - fmod(_t * 160.0, 300.0))
+			draw_circle(Vector2(bx, by), 15, Color("d9f23c"))
+			draw_arc(Vector2(bx, by), 15, 0, TAU, 20, Color("8aa020"), 2.0)
 		_:
 			draw_phone(pc, 330, hl if hl in ["arrows", "A", "B"] else "")
 	var tx := size.x * 0.48

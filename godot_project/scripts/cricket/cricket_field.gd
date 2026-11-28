@@ -203,8 +203,10 @@ func _ground() -> void:
 	grass.position = CENTER
 	add_child(grass)
 	# real blades close to where the cameras sit: around the batter and the run-up
-	_blades(Rect2(-9.0, -7.0, 18.0, 12.0))
-	_blades(Rect2(-6.0, BOWL_Z - 13.0, 12.0, 12.0))
+	var off_pitch := func(x: float, z: float) -> bool:
+		return not (absf(x) < PITCH_HALF_W + 0.05 and z < 2.0 and z > BOWL_Z - 2.0)
+	add_child(blades_node(Rect2(-9.0, -7.0, 18.0, 12.0), off_pitch))
+	add_child(blades_node(Rect2(-6.0, BOWL_Z - 13.0, 12.0, 12.0), off_pitch))
 
 
 func _pitch() -> void:
@@ -235,7 +237,8 @@ static func _shader_mat(code: String) -> ShaderMaterial:
 
 
 ## Short, dense outfield blades (a few cm tall) as one MultiMesh.
-func _blades(area: Rect2) -> void:
+## `keep(x, z)` decides where blades may grow.
+static func blades_node(area: Rect2, keep: Callable) -> MultiMeshInstance3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_uv(Vector2(0, 0))
@@ -258,7 +261,7 @@ func _blades(area: Rect2) -> void:
 	for i in n:
 		var x := area.position.x + rng.randf() * area.size.x
 		var z := area.position.y + rng.randf() * area.size.y
-		if absf(x) < PITCH_HALF_W + 0.05 and z < 2.0 and z > BOWL_Z - 2.0:
+		if not keep.call(x, z):
 			continue
 		# thin out towards the edges of the patch so it blends into the turf
 		var ex := minf(x - area.position.x, area.end.x - x)
@@ -280,7 +283,7 @@ func _blades(area: Rect2) -> void:
 	var mat := _shader_mat(BLADE_SHADER)
 	mi.material_override = mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
+	return mi
 
 
 func _line(pos: Vector3, size: Vector3, mat: Material) -> void:

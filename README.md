@@ -2,7 +2,27 @@
 
 A motion-controlled sports game for Windows: your phone (iPhone or Android) is the controller. It runs fullscreen on a laptop or TV (720p, 1080p, 1440p and 4K). No app is needed on the phone: it opens a web page served by the game.
 
-**Available now: Bowling** (1–8 players, 10 frames, real pin physics) and **Cricket** (1–8 players, Super Over / 2 / 5 overs, real ball, bat and fielding physics). Tennis, Golf and Baseball are placeholders in the menu.
+**Available now: Bowling** (1–8 players, 10 frames, real pin physics) **Cricket** (1–8 players, Super Over / 2 / 5 overs, real ball, bat and fielding physics) and **Tennis** (doubles, 1–4 players, 1 / 3 / 5 games, real ball spin and bounce). Golf and Baseball are placeholders in the menu.
+
+## Tennis
+
+Doubles on an outdoor hard court, always two against two. Players run to the ball on their own; you only swing.
+
+- **Who controls whom:**
+  - 1 player: you control both players on your side, against two computer players.
+  - 2 players: each of you controls both players on one side, with split screen.
+  - 3 players: two of you share the near side; the third controls both far players.
+  - 4 players: everyone controls one player.
+- **Match:** 1, 3 or 5 games (first to 1, 2 or 3), with real scoring: 15/30/40, deuce and advantage. Serve alternates every game and moves between the deuce and ad courts.
+- **Serve:** tap **B** to toss, then swing over your head as the ball reaches the top. Badly timed or flat-out serves can fault; two faults is a double fault.
+- **Rally:** swing as the ball reaches your player. Forehand or backhand is picked for you.
+  - Timing aims the shot: early goes cross-court, late goes down the line. Way off is a miss or a framed shot.
+  - Swing speed sets the pace.
+  - Finishing high gives topspin; finishing low gives slice. A slow flick up is a lob; a slow chop down is a drop shot.
+- **Physics:**
+  - Ball: drag, Magnus force from spin (topspin dips, slice floats) and a hard-court bounce where topspin kicks up and slice skids low ([`tennis_ball.gd`](godot_project/scripts/tennis/tennis_ball.gd)).
+  - Net: real heights. A ball that clips the tape can trickle over.
+- **Computer players:** Easy, Medium or Hard. They make more errors when stretched.
 
 ## Cricket
 
@@ -146,6 +166,9 @@ godot --headless -s tests/test_physics.gd
 godot --headless -s tests/test_cricket_ball.gd
 godot --headless -s tests/test_cricket_bat.gd
 godot --headless --fixed-fps 60 -s tests/test_cricket_human.gd
+godot --headless -s tests/test_tennis_ball.gd
+godot --headless --fixed-fps 60 -s tests/test_tennis_cpu.gd
+godot --headless --fixed-fps 60 -s tests/test_tennis_human.gd
 ```
 
 Font: M PLUS Rounded 1c (SIL Open Font License, see `godot_project/fonts/LICENSE.txt`).

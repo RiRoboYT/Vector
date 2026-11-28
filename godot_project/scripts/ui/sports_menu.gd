@@ -7,11 +7,12 @@ var back_btn: PillButton
 var _preview := "Bowling"
 var card: PreviewCard
 var cricket_card: PreviewCard
+var tennis_card: PreviewCard
 
 
 func _init() -> void:
 	super()
-	var names := [["Bowling", true], ["Cricket", true], ["Tennis", false], ["Golf", false], ["Baseball", false]]
+	var names := [["Bowling", true], ["Cricket", true], ["Tennis", true], ["Golf", false], ["Baseball", false]]
 	for n in names:
 		var b := PillButton.new(n[0], Vector2(330, 76))
 		b.enabled = n[1]
@@ -26,6 +27,8 @@ func _init() -> void:
 	add_child(card)
 	cricket_card = PreviewCard.new(false, "Cricket  ·  1–8 players  ·  Super Over / 2 / 5 overs", "cricket")
 	add_child(cricket_card)
+	tennis_card = PreviewCard.new(false, "Tennis  ·  1–4 players  ·  Doubles  ·  1 / 3 / 5 games", "tennis")
+	add_child(tennis_card)
 	back_btn = PillButton.new("Back", Vector2(170, 66))
 	back_btn.font_size = 26
 	back_btn.pressed.connect(func(): done.emit("back"))
@@ -39,17 +42,20 @@ func _process(delta: float) -> void:
 		if buttons[i].hovered:
 			_preview = buttons[i].text
 	back_btn.position = Vector2(70, size.y - 100)
-	for c in [card, cricket_card]:
+	for c in [card, cricket_card, tennis_card]:
 		c.position = Vector2(470, 160)
 		c.size = Vector2(size.x - 540, size.y - 300)
 	var is_cricket := _preview == "Cricket"
+	var is_tennis := _preview == "Tennis"
 	cricket_card.visible = is_cricket
-	card.visible = not is_cricket
-	var soon := _preview != "Bowling" and _preview != "Cricket"
+	tennis_card.visible = is_tennis
+	card.visible = not is_cricket and not is_tennis
+	var soon := _preview != "Bowling" and _preview != "Cricket" and _preview != "Tennis"
 	card.caption = (_preview + "  ·  coming soon") if soon else "Bowling  ·  1–8 players  ·  10 frames"
 	card.modulate = Color(0.78, 0.78, 0.8) if soon else Color.WHITE
 	card.hovered = buttons[0].hovered
 	cricket_card.hovered = buttons[1].hovered
+	tennis_card.hovered = buttons[2].hovered
 
 
 func _draw() -> void:

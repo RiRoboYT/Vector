@@ -32,7 +32,7 @@ func _init(p_logo := false, p_caption := "", kind := "bowling") -> void:
 	show_logo = p_logo
 	caption = p_caption
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_viewport = CricketPreview.new() if kind == "cricket" else LanePreview.new()
+	_viewport = CricketPreview.new() if kind == "cricket" else (TennisPreview.new() if kind == "tennis" else LanePreview.new())
 	add_child(_viewport)
 	_view = TextureRect.new()
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
