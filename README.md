@@ -9,14 +9,24 @@ A motion-controlled sports game for Windows: your phone (iPhone or Android) is t
 Formats: **Super Over** (6 balls each, 2 wickets), **2 overs** (3 wickets) or **5 overs** (5 wickets). Play against the computer (Easy / Medium / Hard) or against each other: players are split into Blue and Orange teams.
 
 Each ball:
-1. **Batter takes guard:** ◀ ▶ moves across the crease. Hold the phone like the bat handle (screen facing the TV) and **tap B** when ready. This sets the bat's starting position.
+1. **Batter takes guard:** ◀ ▶ moves across the crease. Point the phone **at the floor like a grounded bat** (screen facing the TV) and **tap B**. This sets the bat's starting position.
 2. **Bowler sets the field:** the minimap opens. ▲ ▼ ◀ ▶ choose a fielder, **A** picks up or drops, then move them. **B** when done. Real restrictions apply: **powerplay overs** (first 30%) allow **max 2 fielders outside the 30-yard circle**, other overs max 5.
-3. **Bowler aims:** ◀ ▶ line, ▲ ▼ length (marker on the pitch), **A** switches Fast / Medium / Spin.
-4. **Bowler bowls:** hold **B** to run in, swing the arm over and **let go of B**. Arm speed sets the pace (Fast 125–150 km/h, Medium 105–125, Spin 72–92). Wrist twist gives swing or spin.
-5. **Batter swings:** the bat copies the phone's rotation 1:1. Timing, bat speed and face angle decide the shot.
-6. **Fielding and running are automatic:** fielders chase, catch (or drop), gather and throw, and batters judge their runs.
+3. **Bowler aims:** ◀ ▶ line, ▲ ▼ length (marker on the pitch), **A** switches Fast / Medium / Spin. **Tap B** to run in.
+4. **Timing meter:** a marker slides up and down a bar. **Tap B** when it's in the **green**:
+   - **gold centre** = perfect pace and line
+   - green = good
+   - **top red** = no-ball (+1, ball again, next ball is a **free hit**)
+   - **bottom red** = wide
+   - no tap = dead ball
+   The red ends are small, so most balls are fine. Pace ranges: Fast 125–150 km/h, Medium 105–125, Spin 72–92.
+5. **Half swing:** grip the phone with your whole hand and make a short bowling swing (no button):
+   - **straight** = no swing
+   - **angled left or right** = the ball swings that way in the air
+   - **wrist twist** during the swing = spin that way off the pitch
+6. **Batter swings:** the bat copies the phone's rotation 1:1. Timing, bat speed and face angle decide the shot.
+7. **Fielding and running are automatic:** fielders chase, catch (or drop), gather and throw, and batters judge their runs.
 
-**Outs:** bowled, caught (including edges to the keeper), run out. **Extras:** wides. LBW and no-balls are not in this version.
+**Outs:** bowled, caught (including edges to the keeper), run out. You can't be bowled or caught off a no-ball or a free hit. **Extras:** wides and no-balls. LBW is not in this version.
 
 **Split screen:** when the batter and the bowler are both people, the TV splits: bowler's view on the left, batter's view on the right.
 

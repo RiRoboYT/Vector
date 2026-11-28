@@ -16,9 +16,9 @@ const STUMP_H := 0.711
 const GRASS_SHADER := """
 shader_type spatial;
 render_mode specular_schlick_ggx;
-uniform vec3 light_col : source_color = vec3(0.36, 0.60, 0.22);
-uniform vec3 dark_col : source_color = vec3(0.25, 0.47, 0.15);
-uniform vec3 dry_col : source_color = vec3(0.56, 0.60, 0.30);
+uniform vec3 base_col : source_color = vec3(0.29, 0.47, 0.19);
+uniform vec3 warm_col : source_color = vec3(0.42, 0.52, 0.22);
+uniform vec3 cool_col : source_color = vec3(0.22, 0.42, 0.20);
 varying vec3 wpos;
 void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -29,20 +29,30 @@ float noise(vec2 p) {
 float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.03; a *= 0.5; } return v; }
 void fragment() {
 	vec2 p = wpos.xz;
-	// mowing stripes along the pitch, soft edges
-	float s = smoothstep(0.42, 0.58, abs(fract(p.x / 7.0) - 0.5) * 2.0);
-	vec3 c = mix(dark_col, light_col, 0.25 + s * 0.6);
-	c *= 0.86 + 0.28 * fbm(p * 0.3);
-	c = mix(c, dry_col, smoothstep(0.6, 0.85, fbm(p * 0.05 + 7.0)) * 0.3);
-	// fine blade detail, faded with distance so it never shimmers
+	// natural colour drift across the ground
+	float n = fbm(p * 0.06);
+	vec3 c = mix(cool_col, warm_col, smoothstep(0.3, 0.75, n));
+	c = mix(c, base_col, 0.55);
+	c *= 0.9 + 0.2 * fbm(p * 0.45);
+	// mowing stripes: blades lie one way in each lane, so a lane looks light
+	// when you look along the grain and dark against it (view dependent)
+	float lane = floor(p.x / 6.0);
+	float grain = mod(lane, 2.0) * 2.0 - 1.0;
+	float edge = smoothstep(0.0, 0.35, min(fract(p.x / 6.0), 1.0 - fract(p.x / 6.0)) * 6.0);
+	vec3 v = normalize(CAMERA_POSITION_WORLD - wpos);
+	float sheen = grain * v.z * edge;
+	c *= 1.0 + sheen * 0.12;
+	// fine texture, faded with distance so it never shimmers
 	float aa = clamp(1.0 - length(fwidth(p)) * 25.0, 0.0, 1.0);
 	float blades = noise(p * vec2(140.0, 55.0)) * 0.6 + noise(p * 35.0) * 0.4;
-	c *= 1.0 + (blades - 0.5) * 0.35 * aa;
+	c *= 1.0 + (blades - 0.5) * 0.28 * aa;
+	// the odd darker clump
+	c *= 1.0 - smoothstep(0.78, 0.95, noise(p * 3.1)) * 0.05 * aa;
 	ALBEDO = c;
-	ROUGHNESS = 0.92;
-	SPECULAR = 0.2;
+	ROUGHNESS = 0.85;
+	SPECULAR = 0.3 + max(sheen, 0.0) * 0.3;
 	float h = noise(p * 60.0);
-	NORMAL_MAP = vec3(0.5 + (noise(p * 60.0 + vec2(0.3, 0.0)) - h) * 1.2 * aa, 0.5 + (noise(p * 60.0 + vec2(0.0, 0.3)) - h) * 1.2 * aa, 1.0);
+	NORMAL_MAP = vec3(0.5 + (noise(p * 60.0 + vec2(0.3, 0.0)) - h) * 1.1 * aa, 0.5 + (noise(p * 60.0 + vec2(0.0, 0.3)) - h) * 1.1 * aa, 1.0);
 }
 """
 
@@ -58,14 +68,15 @@ float noise(vec2 p) {
 float fbm(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * noise(p); p *= 2.07; a *= 0.5; } return v; }
 void fragment() {
 	vec2 p = wpos.xz;
-	vec3 clay = vec3(0.80, 0.72, 0.53) * (0.82 + 0.3 * fbm(p * 1.7));
-	// faint green on the sides of the strip
-	float edge = smoothstep(1.0, 1.5, abs(p.x));
-	clay = mix(clay, vec3(0.50, 0.58, 0.30), edge * 0.6);
-	// worn, darker footmarks around both creases
-	float wear = (1.0 - smoothstep(0.0, 3.2, abs(p.y + 1.6))) + (1.0 - smoothstep(0.0, 3.2, abs(p.y + 18.5)));
-	wear *= 1.0 - smoothstep(0.3, 1.1, abs(p.x));
-	clay = mix(clay, vec3(0.62, 0.54, 0.40), clamp(wear, 0.0, 1.0) * 0.45 * (0.6 + 0.6 * fbm(p * 4.0)));
+	vec3 clay = vec3(0.70, 0.62, 0.45) * (0.85 + 0.25 * fbm(p * 1.7));
+	// a thin covering of grass, thicker towards the edges of the strip
+	float cover = 0.25 + 0.5 * smoothstep(0.7, 1.5, abs(p.x));
+	cover *= 0.7 + 0.6 * fbm(p * 3.0);
+	clay = mix(clay, vec3(0.46, 0.54, 0.30), clamp(cover, 0.0, 0.85));
+	// dry, scuffed, lighter ends where the bowlers land and the batters stand
+	float wear = (1.0 - smoothstep(0.0, 3.0, abs(p.y + 1.4))) + (1.0 - smoothstep(0.0, 3.0, abs(p.y + 18.7)));
+	wear *= 1.0 - smoothstep(0.4, 1.2, abs(p.x));
+	clay = mix(clay, vec3(0.78, 0.70, 0.54), clamp(wear, 0.0, 1.0) * 0.6 * (0.6 + 0.6 * fbm(p * 4.0)));
 	// hairline cracks
 	float aa = clamp(1.0 - length(fwidth(p)) * 30.0, 0.0, 1.0);
 	float k = abs(noise(p * vec2(22.0, 14.0)) - 0.5);
@@ -128,35 +139,44 @@ func _ready() -> void:
 func _environment() -> void:
 	var env := Environment.new()
 	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.28, 0.55, 0.95)
-	sky_mat.sky_horizon_color = Color(0.74, 0.87, 1.0)
-	sky_mat.ground_horizon_color = Color(0.74, 0.87, 1.0)
-	sky_mat.ground_bottom_color = Color(0.3, 0.5, 0.3)
+	sky_mat.sky_top_color = Color(0.26, 0.48, 0.82)
+	sky_mat.sky_horizon_color = Color(0.72, 0.80, 0.90)
+	sky_mat.sky_curve = 0.12
+	sky_mat.ground_horizon_color = Color(0.72, 0.80, 0.90)
+	sky_mat.ground_bottom_color = Color(0.25, 0.32, 0.22)
+	sky_mat.sun_angle_max = 25.0
+	sky_mat.sun_curve = 0.1
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 0.4
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_exposure = 0.78
-	env.tonemap_white = 1.4
+	env.ambient_light_energy = 0.55
+	env.ambient_light_sky_contribution = 0.85
+	env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	env.tonemap_exposure = 0.98
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.15
+	env.adjustment_contrast = 1.04
 	env.glow_enabled = true
 	env.glow_intensity = 0.25
 	env.glow_hdr_threshold = 1.3
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.78, 0.86, 0.96)
-	env.fog_density = 0.0018
+	env.fog_density = 0.0011
+	env.fog_aerial_perspective = 0.2
 	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 	var sun := DirectionalLight3D.new()
-	sun.light_energy = 1.0
-	sun.light_color = Color(1.0, 0.97, 0.9)
+	sun.light_energy = 1.35
+	sun.light_color = Color(1.0, 0.95, 0.86)
+	sun.light_angular_distance = 1.2 # soft shadow edges
 	sun.shadow_enabled = true
+	sun.shadow_blur = 1.4
 	sun.directional_shadow_max_distance = 70.0
-	sun.rotation = Vector3(deg_to_rad(-55), deg_to_rad(35), 0)
+	sun.rotation = Vector3(deg_to_rad(-42), deg_to_rad(30), 0)
 	add_child(sun)
 
 
@@ -249,8 +269,8 @@ func _blades(area: Rect2) -> void:
 		var b := Basis(Vector3.UP, rng.randf() * TAU) * Basis(Vector3.RIGHT, rng.randf_range(-0.3, 0.3))
 		pts.append(Transform3D(b.scaled(Vector3(1, h, 1)), Vector3(x, 0, z)))
 		var sw := clampf((absf(fmod(x / 7.0 + 100.0, 1.0) - 0.5) * 2.0 - 0.42) / 0.16, 0.0, 1.0)
-		var turf := Color(0.25, 0.47, 0.15).lerp(Color(0.36, 0.60, 0.22), 0.25 + sw * 0.6)
-		cols.append(turf.darkened(rng.randf_range(-0.05, 0.15)))
+		var turf := Color(0.27, 0.45, 0.19).lerp(Color(0.36, 0.52, 0.22), sw * 0.5 + rng.randf() * 0.3)
+		cols.append(turf.darkened(rng.randf_range(-0.05, 0.12)))
 	mm.instance_count = pts.size()
 	for i in pts.size():
 		mm.set_instance_transform(i, pts[i])

@@ -132,6 +132,8 @@ class HudView:
 			_draw_minimap()
 		if g.phase == CricketGame.Phase.AIM:
 			_draw_aim()
+		if g.phase == CricketGame.Phase.RUNUP and not g._is_cpu(g.field_team()):
+			_draw_meter()
 
 	func _panel(r: Rect2, border := UI.BORDER, alpha := 0.93) -> void:
 		draw_style_box(UI.panel_style(Color(1, 1, 1, alpha), border, 18, 2), r)
@@ -154,6 +156,13 @@ class HudView:
 		draw_string(f, r.position + Vector2(r.size.x - 20 - f.get_string_size(sc, 0, -1, 36).x, 40), sc, HORIZONTAL_ALIGNMENT_LEFT, -1, 36, UI.WHITE)
 		var ov := "Overs %s / %d" % [s.over_text(), s.overs]
 		draw_string(reg, r.position + Vector2(18, 80), ov, HORIZONTAL_ALIGNMENT_LEFT, -1, 19, UI.INK)
+		if g.free_hit:
+			var fh := Rect2(r.position + Vector2(262, 62), Vector2(96, 24))
+			var fs := StyleBoxFlat.new()
+			fs.bg_color = Color("e0533d")
+			fs.set_corner_radius_all(12)
+			draw_style_box(fs, fh)
+			draw_string(f, fh.position + Vector2(12, 18), "FREE HIT", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, UI.WHITE)
 		if s.in_powerplay():
 			var pp := Rect2(r.position + Vector2(200, 62), Vector2(52, 24))
 			var ps := StyleBoxFlat.new()
@@ -180,11 +189,11 @@ class HudView:
 					col = UI.BLUE
 				"W":
 					col = Color("e0533d")
-				"Wd":
+				"Wd", "Nb":
 					col = Color("ffb020")
 			draw_circle(Vector2(cx + i * 40 + 16, cy), 16, Color(col, 0.95))
 			draw_arc(Vector2(cx + i * 40 + 16, cy), 16, 0, TAU, 24, UI.BORDER, 2.0, true)
-			var tc := UI.WHITE if t in ["4", "6", "W", "Wd"] else UI.INK_DARK
+			var tc := UI.WHITE if t in ["4", "6", "W", "Wd", "Nb"] else UI.INK_DARK
 			var tw := f.get_string_size(t, 0, -1, 15).x
 			draw_string(f, Vector2(cx + i * 40 + 16 - tw * 0.5, cy + 6), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 15, tc)
 		# chase
@@ -201,14 +210,14 @@ class HudView:
 		var human_bowl := not g._is_cpu(g.field_team())
 		match g.phase:
 			CricketGame.Phase.BAT_SETUP:
-				t = "%s: ◀ ▶ to move · hold the phone like a bat · tap B when ready" % g.batter_names[0]
+				t = "%s: ◀ ▶ to move · point the phone at the floor like a bat · tap B" % g.batter_names[0]
 			CricketGame.Phase.FIELD_SET:
 				t = "%s: set your field · ▲ ▼ ◀ ▶ select · A pick up / drop · B done" % g.bowler_name
 			CricketGame.Phase.AIM:
-				t = "%s: ◀ ▶ line · ▲ ▼ length · A change type · hold B to run in" % g.bowler_name
+				t = "%s: ◀ ▶ line · ▲ ▼ length · A change type · tap B to run in" % g.bowler_name
 			CricketGame.Phase.RUNUP:
 				if human_bowl:
-					t = "Swing your arm over and let go of B to bowl!"
+					t = "Tap B in the green!" if not g.meter_locked else "Now a half swing – angle it to swing, twist to spin"
 				elif human_bat:
 					t = "Get ready…"
 			CricketGame.Phase.DELIVERY:
@@ -298,6 +307,39 @@ class HudView:
 		var z := -g.aim.y
 		var length := "Yorker" if z < 2.2 else ("Full" if z < 4.5 else ("Good length" if z < 7.0 else ("Short" if z < 9.5 else "Bouncer")))
 		draw_string(f, base + Vector2(18, 100), "Length: " + length, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, UI.INK_DARK)
+
+	## Vertical timing bar: red ends (no-ball at the top, wide at the bottom),
+	## green middle and a gold "perfect" band in the centre.
+	func _draw_meter() -> void:
+		var h := 380.0
+		var w := 64.0
+		var r := Rect2(Vector2(size.x - w - 70, size.y * 0.5 - h * 0.5 - 20), Vector2(w, h))
+		_panel(r.grow(14), UI.BLUE)
+		var to_y := func(v: float) -> float:
+			return r.position.y + (1.0 - (v + 1.0) * 0.5) * h
+		var red := Color("e0533d")
+		var green := Color("4cc76a")
+		var gold := Color("ffc233")
+		var top_red: float = to_y.call(CricketGame.METER_RED)
+		var bot_red: float = to_y.call(-CricketGame.METER_RED)
+		draw_rect(Rect2(r.position, Vector2(w, top_red - r.position.y)), red)
+		draw_rect(Rect2(Vector2(r.position.x, top_red), Vector2(w, bot_red - top_red)), green)
+		draw_rect(Rect2(Vector2(r.position.x, bot_red), Vector2(w, r.end.y - bot_red)), red)
+		var p0: float = to_y.call(CricketGame.METER_PERFECT)
+		var p1: float = to_y.call(-CricketGame.METER_PERFECT)
+		draw_rect(Rect2(Vector2(r.position.x, p0), Vector2(w, p1 - p0)), gold)
+		var f := UI.bold()
+		draw_string(f, Vector2(r.position.x - 4, r.position.y - 20), "NO BALL", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
+		draw_string(f, Vector2(r.position.x + 8, r.end.y + 30), "WIDE", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, red)
+		var my: float = to_y.call(g.meter)
+		var mc := UI.INK_DARK if not g.meter_locked else UI.WHITE
+		draw_rect(Rect2(Vector2(r.position.x - 12, my - 3), Vector2(w + 24, 6)), mc)
+		draw_colored_polygon(PackedVector2Array([Vector2(r.position.x - 26, my - 11), Vector2(r.position.x - 12, my), Vector2(r.position.x - 26, my + 11)]), mc)
+		if g.meter_locked:
+			var res: String = {"perfect": "PERFECT", "good": "GOOD", "noball": "NO BALL", "wide": "WIDE"}.get(g.meter_result, "")
+			var rc := gold if g.meter_result == "perfect" else (green if g.meter_result == "good" else red)
+			var tw := f.get_string_size(res, 0, -1, 26).x
+			draw_string(f, Vector2(r.get_center().x - tw * 0.5, r.end.y + 70), res, HORIZONTAL_ALIGNMENT_LEFT, -1, 26, rc)
 
 	func _draw_results() -> void:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.55))

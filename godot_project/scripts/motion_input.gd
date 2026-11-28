@@ -15,7 +15,7 @@ extends Node
 signal calibrated_changed(is_calibrated: bool)
 ## Raw gyro sample in deg/s around the phone's own axes:
 ## x = across the screen (arm swing), y = along the phone (wrist twist).
-signal gyro_sample(t_ms: float, rate_x: float, rate_y: float)
+signal gyro_sample(t_ms: float, rate_x: float, rate_y: float, rate_z: float)
 
 enum Grip { REMOTE, CAMERA }
 
@@ -73,7 +73,7 @@ func handle_sensor(msg: Dictionary) -> void:
 		has_data = true
 	_apply(dt)
 	if g is Dictionary:
-		gyro_sample.emit(t, raw_gyro.x, raw_gyro.y)
+		gyro_sample.emit(t, raw_gyro.x, raw_gyro.y, raw_gyro.z)
 
 
 ## Calibrate everything to the current grip (call while user holds neutral).
@@ -146,6 +146,12 @@ func _compute_raw() -> void:
 	raw_yaw = v.x
 	raw_pitch = v.y
 	raw_roll = v.z
+
+
+## Compass direction (radians, East-North-Up) the player faced when calibrating:
+## that is "towards the TV".
+func facing_yaw() -> float:
+	return _cal.x
 
 
 ## Full phone orientation as a rotation matrix (device -> East-North-Up world).

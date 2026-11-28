@@ -70,6 +70,13 @@ func over_text(inn: Innings = null) -> String:
 ## Record one delivery. kind: "runs", "wide", "out". Returns true if the over ended.
 func record(kind: String, runs: int, batter: String, bowler: String, how := "") -> bool:
 	var inn := cur()
+	if kind == "noball":
+		inn.runs += 1 + runs
+		inn.extras += 1
+		inn.batter_runs[batter] = inn.batter_runs.get(batter, 0) + runs
+		inn.this_over.append("Nb")
+		inn.bowler_runs[bowler] = inn.bowler_runs.get(bowler, 0) + 1 + runs
+		return false
 	if kind == "wide":
 		inn.runs += 1 + runs
 		inn.extras += 1 + runs

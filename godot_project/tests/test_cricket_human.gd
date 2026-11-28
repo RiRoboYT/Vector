@@ -10,6 +10,8 @@ var t_ms := 0.0
 var beta := 90.0 # phone upright = bat in stance
 var swinging := -1.0
 var hits := 0
+var tapped := false
+var swing_t := -1.0
 
 func _init():
 	var pad := Pad.new(); root.add_child(pad)
@@ -29,6 +31,7 @@ func _init():
 	game.difficulty = 1
 	root.add_child(game)
 	await process_frame
+	motion.gyro_sample.connect(game._on_gyro)
 	game.rig.bat.contact.connect(func(_p, q, e): hits += 1; print("  [test] bat contact quality %.2f%s" % [q, " edge" if e else ""]))
 	var last_phase := -1
 	var b_hold := 0.0
@@ -44,17 +47,26 @@ func _init():
 			_shot(game.phase)
 			match game.phase:
 				CricketGame.Phase.BAT_SETUP:
-					beta = 90.0
+					beta = -90.0 # phone pointing at the floor
 					_press_b_later(2.5 if OS.get_environment("VS_SHOTS") != "" else 0.6)
 				CricketGame.Phase.FIELD_SET:
 					_press_b_later(4.0 if OS.get_environment("VS_SHOTS") != "" else 0.6)
 				CricketGame.Phase.AIM:
 					b_hold = 0.0
-					_hold_b(0.6, 0.5)
+					_press_b_later(0.6) # tap B to run in
 				CricketGame.Phase.DELIVERY:
 					swinging = -1.0
 		if game.phase == CricketGame.Phase.DELIVERY and not game._is_cpu(game.bat_team):
 			_bat(dt)
+		if game.phase == CricketGame.Phase.RUNUP and not game._is_cpu(game.field_team()):
+			if not game.meter_locked and absf(game.meter) < 0.08 and not tapped:
+				tapped = true
+				_press_b_later(0.0)
+				swing_t = 0.0
+			if game.meter_locked:
+				swing_t += dt
+		else:
+			tapped = false
 	print("[test] finished: phase=%s bat contacts=%d result=%s" % [game.phase, hits, game.score.result_text() if game.score.innings.size() == 2 else "-"])
 	quit()
 
@@ -64,14 +76,16 @@ func _shot(ph: int) -> void:
 	if dir == "" or _shots.has(ph):
 		return
 	_shots[ph] = true
-	await create_timer(1.6 if ph in [CricketGame.Phase.BAT_SETUP, CricketGame.Phase.FIELD_SET] else (1.6 if ph == CricketGame.Phase.PLAY else 0.9)).timeout
+	await create_timer(1.6 if ph in [CricketGame.Phase.BAT_SETUP, CricketGame.Phase.FIELD_SET] else (1.6 if ph == CricketGame.Phase.PLAY else (0.35 if ph == CricketGame.Phase.RUNUP else 0.9))).timeout
 	await RenderingServer.frame_post_draw
 	root.get_texture().get_image().save_png("%s/cs_%d.png" % [dir, ph])
 
 
 func _feed() -> void:
-	motion.handle_sensor({"type": "sensor", "orientation": {"alpha": 0.0, "beta": beta, "gamma": 0.0},
-		"gyro": {"alpha": 0, "beta": 600.0 if game.phase == CricketGame.Phase.RUNUP else 0.0, "gamma": 0}, "t": t_ms})
+	# after the meter lock: a short, slightly angled half swing with a wrist twist
+	var swinging_arm := game.phase == CricketGame.Phase.RUNUP and game.meter_locked and swing_t < 0.3
+	var g := {"alpha": 120.0 if swinging_arm else 0.0, "beta": 500.0 if swinging_arm else 0.0, "gamma": -150.0 if swinging_arm else 0.0}
+	motion.handle_sensor({"type": "sensor", "orientation": {"alpha": 0.0, "beta": beta, "gamma": 0.0}, "gyro": g, "t": t_ms})
 
 func _press_b_later(s: float) -> void:
 	await create_timer(s).timeout
@@ -94,13 +108,14 @@ func _bat(dt: float) -> void:
 		if pts[i].z >= game.rig.stance_hands().z:
 			t_arrive = i * 0.01
 			break
+	# phone pointing down in stance: bat angle phi = beta + 90 deg
+	var phi := -103.0
 	if swinging < 0.0:
-		beta = 90.0 + 100.0 # backlift
 		if t_arrive >= 0.0 and t_arrive < 0.16:
 			swinging = 0.0
 	else:
 		swinging += dt
-		beta = 190.0 - swinging * 650.0 # ~650 deg/s through the ball
-		beta = maxf(beta, 20.0)
-	if beta > 180.0:
-		beta -= 360.0
+		phi = minf(-103.0 + swinging * 650.0, 60.0) # ~650 deg/s through the ball
+	beta = phi - 90.0
+	if beta < -180.0:
+		beta += 360.0

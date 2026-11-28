@@ -13,7 +13,7 @@ extends Node
 
 signal changed
 signal phone_button(pid: String, id: String, down: bool)
-signal gyro_sample(t_ms: float, rate_x: float, rate_y: float) # active phone only
+signal gyro_sample(t_ms: float, rate_x: float, rate_y: float, rate_z: float) # active phone only
 signal phone_joined(pid: String)
 signal phone_left(pid: String)
 
@@ -116,9 +116,9 @@ func _on_hello(cid: int, msg: Dictionary) -> void:
 		ph.pid = pid
 		ph.motion = MotionInput.new()
 		add_child(ph.motion)
-		ph.motion.gyro_sample.connect(func(t, rx, ry):
+		ph.motion.gyro_sample.connect(func(t, rx, ry, rz):
 			if pid == active_pid:
-				gyro_sample.emit(t, rx, ry))
+				gyro_sample.emit(t, rx, ry, rz))
 		phones[pid] = ph
 	elif ph.cid >= 0:
 		_cid_to_pid.erase(ph.cid)

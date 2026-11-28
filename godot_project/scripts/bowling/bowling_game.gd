@@ -247,7 +247,7 @@ func _start_swing() -> void:
 	hud.show_hints(false)
 
 
-func _on_gyro(t: float, rx: float, ry: float) -> void:
+func _on_gyro(t: float, rx: float, ry: float, _rz := 0.0) -> void:
 	var dt := 1.0 / 60.0 if _last_gyro_t < 0.0 else clampf((t - _last_gyro_t) / 1000.0, 0.0, 0.05)
 	_last_gyro_t = t
 	_hist.append([t, rx, ry])

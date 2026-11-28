@@ -61,6 +61,18 @@ var _cpu_shot := {}
 var _ball_kind := Kind.FAST
 var _wide_checked := false
 var _marker: MeshInstance3D
+# bowling timing meter: marker sweeps -1..1; tap B to lock it
+const METER_PERFECT := 0.12
+const METER_RED := 0.88
+const METER_FREQ := [1.1, 0.9, 0.75] # sweeps per second (Fast, Medium, Spin)
+var meter := 0.0
+var meter_locked := false
+var meter_result := "" # "perfect" | "good" | "noball" | "wide"
+var _meter_t := 0.0
+var _lock_t := 0.0
+var _sw := {} # half-swing measurement
+var _noball := false
+var free_hit := false
 # split screen (player vs player): [0] = bowler view (left), [1] = batter view (right)
 var _split_layer: CanvasLayer
 var _split_cams: Array[Camera3D] = []
@@ -94,6 +106,8 @@ func _ready() -> void:
 	play.finished.connect(_on_play_finished)
 	play.message.connect(func(t): hud.big_message(t, t.ends_with("!")))
 	ball.hit_stumps.connect(_on_ball_hit_stumps)
+	if roster:
+		roster.gyro_sample.connect(_on_gyro)
 	# where the bowler is aiming to pitch the ball
 	_marker = MeshInstance3D.new()
 	var tm := TorusMesh.new()
@@ -297,7 +311,7 @@ func _enter(p: Phase) -> void:
 			if h:
 				roster.lock_to(h.pid)
 				_msg(h.pid, {"type": "layout", "dpad": false})
-				_msg(h.pid, {"type": "hint", "text": "◀ ▶ move · hold the phone like a bat, tap B when ready"})
+				_msg(h.pid, {"type": "hint", "text": "◀ ▶ move · point the phone at the floor like a grounded bat, tap B"})
 		Phase.FIELD_SET:
 			if _is_cpu(field_team()):
 				_cpu_choose_delivery()
@@ -315,14 +329,18 @@ func _enter(p: Phase) -> void:
 			var h := _team_human(field_team(), bowler_name)
 			if h:
 				_msg(h.pid, {"type": "layout", "dpad": true})
-				_msg(h.pid, {"type": "hint", "text": "◀ ▶ line · ▲ ▼ length · A type · hold B to run in"})
+				_msg(h.pid, {"type": "hint", "text": "◀ ▶ line · ▲ ▼ length · A type · tap B to run in"})
 		Phase.RUNUP:
 			_runup_t = 0.0
 			_released = false
 			_release = {}
+			meter_locked = false
+			meter_result = ""
+			_meter_t = randf() * 2.0
+			_noball = false
 			var hb := _team_human(field_team(), bowler_name)
 			if hb and not _is_cpu(field_team()):
-				_msg(hb.pid, {"type": "hint", "text": "Bowl! Swing your arm over and let go of B"})
+				_msg(hb.pid, {"type": "hint", "text": "Tap B when the marker is in the green!"})
 		Phase.DELIVERY:
 			var h := _team_human(bat_team, batter_names[0])
 			if h and not _is_cpu(bat_team):
@@ -408,9 +426,13 @@ func _pose_bat_from_phone() -> void:
 		var psi := (0.5 if Input.is_key_pressed(KEY_LEFT) else 0.0) - (0.5 if Input.is_key_pressed(KEY_RIGHT) else 0.0)
 		rig.apply_rotation(BatterRig.swing_rotation(phi, psi * _mirror()))
 		return
+	# stance pose = phone pointing at the floor (top down), screen to the TV:
+	# bat "up" is the phone's bottom edge, so turn the phone frame 180° about Z
 	var d := _r_cal.transposed() * m.device_basis()
+	var map := Basis(Vector3(0, 0, 1), PI)
+	var delta := map * d * map.transposed()
 	var st := rig.stance_transform().basis
-	rig.apply_rotation(st * d * st.transposed())
+	rig.apply_rotation(st * delta * st.transposed())
 
 
 func _update_bat_setup(delta: float) -> void:
@@ -524,16 +546,20 @@ func _update_runup(delta: float) -> void:
 	bc.step_phase += delta * (5.0 + p * 7.0)
 	bc.walk_amount = 1.0 if p < 1.0 else 0.0
 	bc.lean = 0.15 + p * 0.1
-	# arm gathers during the run, then windmills over the top
-	if human and not _released and not Pad.is_down(Pad.B) and _runup_t > 0.15 and _release.is_empty():
-		_release = _measure_release()
-	if not human and _release.is_empty():
+	if human:
+		_update_meter(delta, run_time)
+		if phase != Phase.RUNUP:
+			return
+	elif _release.is_empty():
 		var cr: Array = get_meta("cpu_release", [0.7, 0.0])
-		_release = {"effort": cr[0], "twist": cr[1]}
+		_release = {"effort": cr[0], "swing": cr[1], "twist": cr[1], "err": 0.08}
+	# arm pumps during the run, then comes over the top when the release is ready
 	if p < 0.82:
 		bc.swing_angle = sin(_runup_t * 9.0) * 0.5
 	else:
 		var q := clampf((p - 0.82) / 0.18 + maxf(0.0, _runup_t - run_time) * 4.0, 0.0, 1.6)
+		if _release.is_empty():
+			q = minf(q, 0.85) # gathered, waiting for the half swing
 		bc.swing_angle = -q * PI * 1.25
 		if q >= 1.0 and not _released and not _release.is_empty():
 			_bowl()
@@ -545,44 +571,146 @@ func _update_runup(delta: float) -> void:
 		play.bowler.target = Vector3(0.8, 0, CricketField.BOWL_Z + 4.0)
 
 
-func _measure_release() -> Dictionary:
-	# arm speed from the gyro (fastest rotation in the last ~0.15 s)
-	var m := _phone_motion()
-	var effort := 0.7
-	var twist := 0.0
-	if m and m.has_data:
-		var g := m.raw_gyro
-		var rate := maxf(absf(g.x), absf(g.z))
-		effort = clampf((rate - 150.0) / 650.0, 0.15, 1.0)
-		twist = clampf(g.y / 300.0, -1.0, 1.0)
+## Timing meter, then the half swing.
+func _update_meter(delta: float, run_time: float) -> void:
+	if not meter_locked:
+		_meter_t += delta * METER_FREQ[kind]
+		var x := fmod(_meter_t, 2.0)
+		meter = (x if x < 1.0 else 2.0 - x) * 2.0 - 1.0
+		if Pad.just_pressed(Pad.B):
+			_lock_meter()
+		elif _runup_t > run_time + 0.6:
+			_dead_ball()
+		return
+	_lock_t += delta
+	if _release.is_empty():
+		var m := _phone_motion()
+		if m == null or not m.has_data:
+			# keyboard: no half swing to read
+			_finish_swing(0.0, (0.6 if Input.is_key_pressed(KEY_E) else 0.0) - (0.6 if Input.is_key_pressed(KEY_Q) else 0.0))
+		elif _lock_t > 1.3:
+			_finish_swing(0.0, 0.0) # no swing made: bowl it straight
+		elif _sw.get("started", false) and (_sw.get("ended", false) or _lock_t - float(_sw.get("t0", 0.0)) > 0.7):
+			var w: float = maxf(_sw.get("w", 0.0), 0.001)
+			_finish_swing(float(_sw.get("ang", 0.0)) / w, float(_sw.get("twist", 0.0)))
+
+
+func _lock_meter() -> void:
+	meter_locked = true
+	_lock_t = 0.0
+	_sw = {}
+	var a := absf(meter)
+	if a <= METER_PERFECT:
+		meter_result = "perfect"
+	elif a < METER_RED:
+		meter_result = "good"
 	else:
-		effort = clampf(_runup_t / 1.2, 0.3, 1.0)
-		twist = (0.6 if Input.is_key_pressed(KEY_E) else 0.0) - (0.6 if Input.is_key_pressed(KEY_Q) else 0.0)
-	return {"effort": effort, "twist": twist}
+		meter_result = "noball" if meter > 0.0 else "wide"
+	Sfx.click(1.0, 1.5 if meter_result == "perfect" else 1.0)
+	hud.flash({"perfect": "PERFECT!", "good": "Good", "noball": "Overstepped!", "wide": "Lost it…"}[meter_result])
+	var hb := _team_human(field_team(), bowler_name)
+	if hb:
+		_msg(hb.pid, {"type": "hint", "text": "Now a half swing! Angle it to swing, twist to spin"})
+
+
+## Gyro from the bowler's phone: measures the half swing after the meter lock.
+## Direction of the swing comes from the rotation axis in the room: a straight
+## swing towards the TV turns about the left-right axis; an angled one is
+## tilted. Wrist twist = rotation about the phone's own long axis.
+func _on_gyro(_t: float, rx: float, ry: float, rz: float) -> void:
+	if phase != Phase.RUNUP or not meter_locked or not _release.is_empty():
+		return
+	var m := _phone_motion()
+	if m == null:
+		return
+	var w_dev := Vector3(rx, ry, rz)
+	var mag := w_dev.length()
+	var dt := 1.0 / 60.0
+	if not _sw.get("started", false):
+		if mag > 140.0:
+			_sw = {"started": true, "t0": _lock_t, "peak": mag, "ang": 0.0, "w": 0.0, "twist": 0.0}
+		else:
+			return
+	_sw.peak = maxf(_sw.peak, mag)
+	var w := m.device_basis() * w_dev # into the room (East-North-Up)
+	var y0 := m.facing_yaw()
+	var fwd := Vector2(sin(y0), cos(y0))
+	var right := Vector2(cos(y0), -sin(y0))
+	var wh := Vector2(w.x, w.y)
+	if wh.length() > 60.0:
+		var ang := rad_to_deg(atan2(wh.dot(fwd), wh.dot(right)))
+		if ang > 90.0:
+			ang -= 180.0
+		elif ang < -90.0:
+			ang += 180.0
+		_sw.ang += ang * mag
+		_sw.w += mag
+	_sw.twist += ry * dt
+	if mag < _sw.peak * 0.4 and _lock_t - float(_sw.t0) > 0.12:
+		_sw["ended"] = true
+
+
+func _finish_swing(swing_deg: float, twist: float) -> void:
+	var a := absf(meter)
+	var effort := 1.0
+	var err := 0.03
+	match meter_result:
+		"good":
+			var f := (a - METER_PERFECT) / (METER_RED - METER_PERFECT)
+			effort = 1.0 - f * 0.45
+			err = 0.04 + f * 0.12
+		"wide":
+			effort = 0.45
+			err = 0.1
+		"noball":
+			effort = 0.85
+			err = 0.08
+	var swing_amt := clampf(swing_deg / 25.0, -1.0, 1.0) if absf(swing_deg) > 5.0 else 0.0
+	var twist_amt := clampf(twist / 45.0, -1.0, 1.0) if absf(twist) > 8.0 else 0.0
+	_release = {"effort": effort, "swing": swing_amt, "twist": twist_amt, "err": err}
+	_noball = meter_result == "noball"
+	if meter_result == "wide":
+		# sprays down the leg side or way outside off
+		aim.x += (1.25 if randf() < 0.5 else -1.15) * _mirror()
+
+
+func _dead_ball() -> void:
+	hud.big_message("Dead ball", false)
+	meter_locked = false
+	_release = {}
+	var bc := play.bowler.ch
+	bc.global_position = Vector3(0.9, 0, CricketField.BOWL_Z - 11.0)
+	_enter(Phase.AIM)
 
 
 func _bowl() -> void:
 	_released = true
 	var effort: float = _release.get("effort", 0.7)
+	var swing_amt: float = _release.get("swing", 0.0)
 	var twist: float = _release.get("twist", 0.0)
 	var rng: Array = SPEED_RANGE[kind]
 	var kmh: float = lerpf(rng[0], rng[1], effort)
 	var speed := kmh / 3.6
+	# angled half swing -> swing in the air; wrist twist -> spin off the pitch
 	var swing := 0.0
-	var turn := 0.0
-	if kind == Kind.SPIN:
-		turn = twist * 0.075
-	else:
-		swing = twist * (5.0 if kind == Kind.FAST else 4.0)
-	# a little inaccuracy, more when bowling flat out
-	var err := Vector2(randf_range(-1, 1), randf_range(-1, 1)) * (0.05 + effort * 0.12)
+	if kind != Kind.SPIN:
+		swing = swing_amt * (5.0 if kind == Kind.FAST else 4.0) * _mirror()
+	var turn := twist * (0.075 if kind == Kind.SPIN else 0.025) * _mirror()
+	var err := Vector2(randf_range(-1, 1), randf_range(-1, 1)) * float(_release.get("err", 0.08))
 	var target := Vector3(aim.x + err.x, 0, aim.y + err.y * 3.0)
 	var from := play.bowler.ch.global_position + Vector3(-0.15, 2.15, 0.4)
 	var v := CricketBall.solve_delivery(from, target, speed, swing)
 	ball.release(from, v, swing, turn)
 	_ball_kind = kind
 	set_meta("kmh", kmh)
-	hud.delivery_info("%s · %d km/h" % [KIND_NAMES[kind], roundi(kmh)])
+	var tag := ""
+	if absf(swing) > 0.5:
+		tag = "  · swing " + ("→" if swing > 0.0 else "←")
+	if absf(turn) > 0.005:
+		tag += "  · spin " + ("→" if turn > 0.0 else "←")
+	hud.delivery_info("%s · %d km/h%s" % [KIND_NAMES[kind], roundi(kmh), tag])
+	if _noball:
+		hud.big_message("NO BALL", false)
 	_enter(Phase.DELIVERY)
 	if _is_cpu(bat_team):
 		_cpu_plan_shot()
@@ -749,12 +877,15 @@ func _on_play_finished(kind_s: String, runs: int, detail: String) -> void:
 	var how := ""
 	var is_wide: bool = get_meta("wide", false)
 	remove_meta("wide")
+	var was_noball := _noball
+	var was_free_hit := free_hit
+	_noball = false
 	if has_meta("bowled"):
 		remove_meta("bowled")
 		kind_s = "bowled"
 	match kind_s:
 		"caught", "bowled":
-			out = true
+			out = not (was_noball or was_free_hit) # can't be bowled / caught off a no-ball or free hit
 			how = kind_s
 			is_wide = false
 		"runout":
@@ -762,16 +893,22 @@ func _on_play_finished(kind_s: String, runs: int, detail: String) -> void:
 			how = "run out"
 	var over_done := false
 	var text := ""
-	if is_wide and not out:
+	if was_noball and not out:
+		score.record("noball", runs, striker, bowler_name)
+		text = "NO BALL" + ("  +%d" % runs if runs > 0 else "") + " · FREE HIT next"
+		free_hit = true
+	elif is_wide and not out:
 		score.record("wide", runs, striker, bowler_name)
 		text = "WIDE" + ("  +%d" % runs if runs > 0 else "")
 	elif out:
 		var dismissed: String = striker if how != "run out" else detail
 		over_done = score.record("out", runs, striker, bowler_name, how)
+		free_hit = false
 		text = "%s OUT – %s" % [dismissed, how.to_upper()]
 		_new_batter(dismissed)
 	else:
 		over_done = score.record("runs", runs, striker, bowler_name)
+		free_hit = false
 		match kind_s:
 			"four":
 				text = "FOUR!"
@@ -782,7 +919,9 @@ func _on_play_finished(kind_s: String, runs: int, detail: String) -> void:
 	print("[cricket] %s %s  ->  %s  (%d/%d, %s ov)" % [teams[bat_team].name, striker, text, score.cur().runs, score.cur().wickets, score.over_text()])
 	hud.big_message(text, kind_s in ["four", "six", "caught", "bowled", "runout"])
 	# strike rotation: odd runs swap ends; end of over swaps again
-	if not is_wide and not out and runs % 2 == 1:
+	if (kind_s in ["caught", "bowled"]) and not out:
+		text = "Not out – " + ("free hit" if was_free_hit else "no ball") + ("" if runs == 0 else "  +%d" % runs)
+	if not out and runs % 2 == 1:
 		batter_names = [batter_names[1], batter_names[0]]
 	if over_done:
 		batter_names = [batter_names[1], batter_names[0]]
