@@ -145,7 +145,7 @@ const PRESETS := {
 		"ambient": 0.75, "sat": 1.12, "contrast": 1.06, "bright": 1.0, "clouds": 0.0, "fog": Color(0.95, 0.9, 0.84)},
 	"menu": {"top": Color(0.4, 0.66, 0.96), "horizon": Color(0.86, 0.94, 1.0), "ground": Color(0.7, 0.84, 0.98),
 		"sun": Color(1.0, 0.97, 0.9), "sun_energy": 1.25, "sun_rot": Vector3(-50, 35, 0),
-		"ambient": 0.7, "sat": 1.12, "contrast": 1.02, "bright": 1.03, "clouds": 0.42, "fog": Color(0.86, 0.92, 1.0)},
+		"ambient": 0.6, "sat": 1.2, "contrast": 1.08, "bright": 1.0, "clouds": 0.42, "fog": Color(0.86, 0.92, 1.0)},
 }
 
 
@@ -195,6 +195,8 @@ static func setup(parent: Node, preset := "day", shadow_distance := 60.0) -> Dir
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	env.fog_enabled = preset != "indoor"
 	env.fog_light_color = p.fog
+	if preset == "menu":
+		env.set_meta("preset", "menu")
 	env.fog_density = 0.0011
 	env.fog_aerial_perspective = 0.25
 	env.fog_sky_affect = 0.0
@@ -231,7 +233,7 @@ static func _apply_env(env: Environment) -> void:
 	env.glow_enabled = q >= MEDIUM
 	env.ssao_enabled = q == HIGH and not compat
 	env.ssil_enabled = q == HIGH and not compat
-	env.fog_enabled = env.get_meta("preset", "day") != "indoor"
+	env.fog_enabled = not (env.get_meta("preset", "day") in ["indoor", "menu"])
 
 
 static func _apply_sun(sun: DirectionalLight3D) -> void:

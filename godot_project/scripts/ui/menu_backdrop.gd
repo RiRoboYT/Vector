@@ -29,8 +29,8 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	_t += delta
 	var a := _t * 0.06 + 0.6
-	var pos := Vector3(sin(a) * 36.0, 15.0 + sin(_t * 0.2) * 0.8, cos(a) * 36.0)
-	_cam.look_at_from_position(pos, Vector3(0, 2.5, 0))
+	var pos := Vector3(sin(a) * 37.0, 17.0 + sin(_t * 0.2) * 0.8, cos(a) * 37.0)
+	_cam.look_at_from_position(pos, Vector3(0, 5.0, 0))
 	for i in _clouds.size():
 		var c := _clouds[i]
 		c.position.x += delta * (0.4 + i * 0.05)
@@ -57,30 +57,120 @@ func _box(size: Vector3, pos: Vector3, c: Color, parent: Node = self) -> MeshIns
 	return mi
 
 
+const ISLAND_R := 14.0
+
+
+func _edge_r(a: float) -> float:
+	return ISLAND_R + sin(a * 3.0) * 0.6 + sin(a * 7.0 + 1.3) * 0.35 + sin(a * 13.0) * 0.15
+
+
+func _on_island(x: float, z: float, margin := 0.6) -> bool:
+	var a := atan2(z, x)
+	return Vector2(x, z).length() < _edge_r(a) - margin and Vector2(x - POND.x, z - POND.z).length() > 2.3
+
+
+const POND := Vector3(-3.5, 0, 7.2)
+
+
 func _island() -> void:
-	# grassy top
-	var top := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 14.0
-	cm.bottom_radius = 13.2
-	cm.height = 1.2
-	cm.radial_segments = 64
-	top.mesh = cm
-	top.material_override = CricketField._shader_mat(CricketField.GRASS_SHADER)
-	top.position.y = -0.6
-	add_child(top)
-	# rocky underside tapering into the sky
-	for i in 3:
-		var rock := MeshInstance3D.new()
-		var rm := CylinderMesh.new()
-		rm.top_radius = 13.2 - i * 3.6
-		rm.bottom_radius = 9.6 - i * 3.6
-		rm.height = 3.0
-		rm.radial_segments = 24
-		rock.mesh = rm
-		rock.material_override = _mat([Color("8a6b4e"), Color("7a5e45"), Color("6b513b")][i], 0.95)
-		rock.position.y = -2.7 - i * 3.0
-		add_child(rock)
+	# grassy top with a wavy natural edge
+	var seg := 96
+	var top := SurfaceTool.new()
+	top.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in seg:
+		var a0 := TAU * i / seg
+		var a1 := TAU * (i + 1) / seg
+		top.set_uv(Vector2(0.5, 0.5))
+		top.add_vertex(Vector3.ZERO)
+		top.add_vertex(Vector3(cos(a0) * _edge_r(a0), 0, sin(a0) * _edge_r(a0)))
+		top.add_vertex(Vector3(cos(a1) * _edge_r(a1), 0, sin(a1) * _edge_r(a1)))
+	top.generate_normals()
+	var grass := MeshInstance3D.new()
+	grass.mesh = top.commit()
+	grass.material_override = CricketField._shader_mat("""
+shader_type spatial;
+render_mode diffuse_lambert_wrap;
+varying vec3 wp;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+	vec2 i = floor(p); vec2 f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1, 0)), u.x), mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), u.x), u.y);
+}
+void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void fragment() {
+	float n = noise(wp.xz * 0.35) * 0.6 + noise(wp.xz * 1.7) * 0.3 + noise(wp.xz * 9.0) * 0.1;
+	ALBEDO = mix(vec3(0.24, 0.52, 0.17), vec3(0.42, 0.7, 0.25), n);
+	ROUGHNESS = 0.9;
+}
+""")
+	add_child(grass)
+	# rocky cliff: earth lip, then layered stone tapering to a point
+	var noise := FastNoiseLite.new()
+	noise.seed = 4
+	noise.frequency = 0.25
+	var cliff := SurfaceTool.new()
+	cliff.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rings := [[0.0, 1.0], [-0.5, 1.0], [-1.6, 0.97], [-3.2, 0.86], [-5.5, 0.66], [-8.0, 0.42], [-10.5, 0.2], [-12.5, 0.04]]
+	var cols := [Color("5b8a3a"), Color("7a5a3c"), Color("8a6b4e"), Color("9b8470"), Color("7f6a58"), Color("8d7a69"), Color("6e5c4e"), Color("6e5c4e")]
+	for r in rings.size() - 1:
+		for i in seg:
+			var a0 := TAU * i / seg
+			var a1 := TAU * (i + 1) / seg
+			var q := []
+			for pair in [[a0, r], [a1, r], [a1, r + 1], [a0, r + 1]]:
+				var ang: float = pair[0]
+				var ri: int = pair[1]
+				var y: float = rings[ri][0]
+				var k: float = rings[ri][1]
+				var jag := 1.0 + (noise.get_noise_2d(ang * 8.0, y) * 0.22 if ri > 1 else 0.0)
+				var rad := _edge_r(ang) * k * jag
+				q.append(Vector3(cos(ang) * rad, y + (noise.get_noise_2d(ang * 20.0, y * 3.0) * 0.4 if ri > 1 else 0.0), sin(ang) * rad))
+			for idx in [0, 1, 2, 0, 2, 3]:
+				var ri2: int = r if idx < 2 else r + 1
+				st_col(cliff, cols[ri2].darkened(0.08 * float((i * 7 + r) % 3)))
+				cliff.add_vertex(q[idx])
+	cliff.generate_normals()
+	var cmi := MeshInstance3D.new()
+	cmi.mesh = cliff.commit()
+	var cm := StandardMaterial3D.new()
+	cm.vertex_color_use_as_albedo = true
+	cm.roughness = 0.95
+	cm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	cm.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
+	cmi.material_override = cm
+	add_child(cmi)
+	# a little pond
+	var pond := MeshInstance3D.new()
+	var pm := CylinderMesh.new()
+	pm.top_radius = 2.2
+	pm.bottom_radius = 2.2
+	pm.height = 0.02
+	pm.radial_segments = 48
+	pond.mesh = pm
+	pond.material_override = CricketField._shader_mat("""
+shader_type spatial;
+render_mode specular_schlick_ggx;
+void fragment() {
+	vec2 p = UV * 14.0;
+	float rip = sin(p.x * 3.0 + TIME * 1.5) * sin(p.y * 2.6 - TIME * 1.2);
+	NORMAL = normalize(NORMAL + vec3(rip * 0.06, 0.0, rip * 0.05));
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	ALBEDO = mix(vec3(0.12, 0.42, 0.62), vec3(0.6, 0.85, 1.0), fres);
+	ROUGHNESS = 0.08;
+	SPECULAR = 0.8;
+}
+""")
+	pond.position = POND + Vector3(0, 0.012, 0)
+	add_child(pond)
+	for i in 9:
+		var a := TAU * i / 9.0
+		Nature.rock(self, POND + Vector3(cos(a) * 2.35, 0.0, sin(a) * 2.35), randf_range(0.18, 0.32), i)
+	# grass blades all over the island
+	add_child(CricketField.blades_node(Rect2(-14, -14, 28, 28), func(x: float, z: float) -> bool: return _on_island(x, z, 0.3)))
+
+
+func st_col(st: SurfaceTool, c: Color) -> void:
+	st.set_color(c)
 
 
 func _person(pos: Vector3, shirt: Color, outfit: String, face: Vector3, seed: int) -> Character:
@@ -160,28 +250,36 @@ func _cricket(o: Vector3) -> void:
 func _trees() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 5
-	for i in 16:
-		var a := TAU * i / 16.0 + rng.randf_range(-0.1, 0.1)
-		var r := rng.randf_range(10.5, 12.8)
+	# a ring of mixed trees round the edge, a few inside, bushes and rocks
+	for i in 26:
+		var a := TAU * i / 26.0 + rng.randf_range(-0.08, 0.08)
+		var r := _edge_r(a) - rng.randf_range(1.0, 2.6)
 		var p := Vector3(cos(a) * r, 0, sin(a) * r)
-		var trunk := MeshInstance3D.new()
-		var tm := CylinderMesh.new()
-		tm.top_radius = 0.12
-		tm.bottom_radius = 0.18
-		tm.height = 1.4
-		trunk.mesh = tm
-		trunk.material_override = _mat(Color("7a5232"))
-		trunk.position = p + Vector3(0, 0.7, 0)
-		add_child(trunk)
-		var crown := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		var s := rng.randf_range(0.9, 1.5)
-		sm.radius = s
-		sm.height = s * 2.0
-		crown.mesh = sm
-		crown.material_override = _mat(Color("4f9e3e").lerp(Color("7cc25a"), rng.randf()))
-		crown.position = p + Vector3(0, 1.4 + s * 0.8, 0)
-		add_child(crown)
+		if Vector2(p.x - POND.x, p.z - POND.z).length() < 3.0:
+			continue
+		if rng.randf() < 0.35:
+			Nature.pine(self, p, rng.randf_range(0.75, 1.05), i)
+		else:
+			Nature.tree(self, p, rng.randf_range(0.75, 1.1), i)
+	for i in 22:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(3.0, 12.5)
+		var p := Vector3(cos(a) * r, 0, sin(a) * r)
+		if not _on_island(p.x, p.z, 1.0) or _busy(p):
+			continue
+		if i % 3 == 0:
+			Nature.rock(self, p, rng.randf_range(0.2, 0.45), i)
+		else:
+			Nature.bush(self, p, rng.randf_range(0.55, 0.9), i)
+	Nature.flowers(self, Vector3.ZERO, 13.0, 900, 7, func(x: float, z: float) -> bool: return _on_island(x, z, 0.8) and not _busy(Vector3(x, 0, z)))
+
+
+## Keep props off the mini courts.
+func _busy(p: Vector3) -> bool:
+	for c: Vector3 in [Vector3(-4.5, 0, -1.5), Vector3(4.6, 0, -2.0), Vector3(0.5, 0, 4.6)]:
+		if Vector2(p.x - c.x, p.z - c.z).length() < 4.2:
+			return true
+	return false
 
 
 func _sky_clouds() -> void:

@@ -272,23 +272,12 @@ func _surroundings() -> void:
 		var x := rng2.randf_range(-40, 40)
 		var z := end * rng2.randf_range(rz + 8, rz + 40)
 		var s := rng2.randf_range(1.2, 2.4)
-		var trunk := MeshInstance3D.new()
-		var tc := CylinderMesh.new()
-		tc.top_radius = 0.15 * s
-		tc.bottom_radius = 0.22 * s
-		tc.height = 2.2 * s
-		trunk.mesh = tc
-		trunk.material_override = CricketField._mat(Color("6b4a2b"))
-		trunk.position = Vector3(x, 1.1 * s, z)
-		add_child(trunk)
-		var crown := MeshInstance3D.new()
-		var cs := SphereMesh.new()
-		cs.radius = 1.6 * s
-		cs.height = 3.0 * s
-		crown.mesh = cs
-		crown.material_override = CricketField._mat(Color(0.25, 0.52, 0.22).lightened(rng2.randf_range(0.0, 0.18)), 0.95)
-		crown.position = Vector3(x, 3.2 * s, z)
-		add_child(crown)
+		if rng2.randf() < 0.3:
+			Nature.pine(self, Vector3(x, 0, z), s * 1.1, i, absf(z) < rz + 20.0)
+		else:
+			Nature.tree(self, Vector3(x, 0, z), s * 1.2, i, absf(z) < rz + 20.0)
+		if i % 3 == 0:
+			Nature.bush(self, Vector3(x + 2.5, 0, z - 1.5), s * 0.8, i)
 	for i in 7:
 		var hill := MeshInstance3D.new()
 		var hm := SphereMesh.new()
