@@ -23,6 +23,7 @@ Doubles on an outdoor hard court, always two against two. Players run to the bal
   - Ball: drag, Magnus force from spin (topspin dips, slice floats) and a hard-court bounce where topspin kicks up and slice skids low ([`tennis_ball.gd`](godot_project/scripts/tennis/tennis_ball.gd)).
   - Net: real heights. A ball that clips the tape can trickle over.
 - **Computer players:** Easy, Medium or Hard. They make more errors when stretched.
+- **Haptics:** a tap on the toss, a buzz on every hit (double kick on the sweet spot, harder on big shots, dull tap on a framed shot), a light tick on a miss, and a long buzz on a fault. Points, games and matches won or lost each have their own feel.
 
 ## Cricket
 

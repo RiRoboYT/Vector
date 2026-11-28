@@ -33,6 +33,7 @@ var team_names := ["Blue", "Orange"]
 var phase := Phase.INTRO
 var _t := 0.0
 var _clock := 0.0
+var _sweet_spot := false
 var server: TennisPlayer
 var serve_fault := 0 # faults this point
 var hitter_team := 0 # team that hit the ball last
@@ -240,6 +241,7 @@ func _toss() -> void:
 	ball.mode = TennisBall.Mode.FLYING
 	if is_human(server):
 		_msg(server.pid, {"type": "hint", "text": "Swing when the ball is at the top!"})
+		_haptic(server, "tap")
 
 
 func _update_toss(delta: float) -> void:
@@ -253,6 +255,7 @@ func _update_toss(delta: float) -> void:
 	if ball.global_position.y < 1.2 and _toss_t > 0.6 and phase == Phase.TOSS:
 		# let it drop: toss again
 		hud.flash("Toss again")
+		_haptic(server, "tick")
 		remove_meta("cpu_served")
 		_setup_point()
 
@@ -464,7 +467,14 @@ func _strike(p: TennisPlayer, power: float, aim: float, spin_dir: float, wild: b
 	_is_serve = false
 	_first_bounce_ok = false
 	Sfx.pin_hit(clampf(0.4 + power * 0.6, 0.4, 1.0))
-	_haptic(p, "strong" if power > 0.75 else "hit")
+	# feel: framed = dull tap, sweet spot = double kick, else by power
+	var feel := "strong" if power > 0.75 else "hit"
+	if wild:
+		feel = "tap"
+	elif _sweet_spot:
+		feel = "double"
+	_sweet_spot = false
+	_haptic(p, feel)
 	receiver_player = null
 	_assign_receiver()
 
@@ -516,6 +526,7 @@ func _human_swing(pid: String, peak: float, dpitch: float, peak_ms := -1) -> voi
 	if absf(dt) > HIT_WINDOW:
 		p.start_swing("fh" if p.get_meta("side", 1.0) > 0.0 else "bh", 3.4)
 		hud.flash("Too early!" if dt < 0.0 else "Too late!")
+		_haptic(p, "tick")
 		return
 	# Wii-style assist: a swing inside the timing window connects as long as
 	# the player got to the ball's path (the ball is still near the hit point)
@@ -523,6 +534,7 @@ func _human_swing(pid: String, peak: float, dpitch: float, peak_ms := -1) -> voi
 	if not (_in_reach(p) or near_path):
 		p.start_swing("fh" if p.get_meta("side", 1.0) > 0.0 else "bh", 3.4)
 		hud.flash("Missed!")
+		_haptic(p, "tick")
 		receiver_player = null
 		return
 	var power := clampf((peak - 250.0) / 750.0, 0.1, 1.0)
@@ -536,6 +548,7 @@ func _human_swing(pid: String, peak: float, dpitch: float, peak_ms := -1) -> voi
 	# mistimed or over-hit swings can fly off the frame
 	var risk := clampf((absf(dt) / HIT_WINDOW - 0.45) * 1.1 + maxf(power - 0.85, 0.0) * 1.2, 0.0, 0.8)
 	var wild := randf() < risk
+	_sweet_spot = absf(dt) < 0.06
 	_strike(p, power, aim, spin_dir, wild, kind)
 
 
@@ -568,6 +581,7 @@ func _fault_or_point(call: String) -> void:
 			_point_to(1 - hitter_team, "Double fault")
 		else:
 			hud.big_message("Fault", false)
+			_haptic(server, "long")
 			ball.kill()
 			phase = Phase.POINT_OVER
 			_t = 1.3 # quicker restart
@@ -590,9 +604,19 @@ func _point_to(team: int, call: String) -> void:
 	elif res == "match":
 		msg = "Game, set and match!"
 	hud.big_message(msg, team == 0 or res == "match")
+	var buzzed := {}
 	for p in players:
-		if is_human(p):
-			_msg(p.pid, {"type": "haptic", "p": "double" if p.team == team else "tick"})
+		if is_human(p) and not buzzed.has(p.pid):
+			buzzed[p.pid] = true
+			var won := p.team == team
+			var feel := "double" if won else "tick"
+			if res == "game":
+				feel = "strong" if won else "tick"
+			elif res == "match":
+				feel = "long" if won else "out"
+			elif call == "Double fault" and p.pid == server.pid:
+				feel = "out"
+			_msg(p.pid, {"type": "haptic", "p": feel})
 	set_meta("result", res)
 
 
