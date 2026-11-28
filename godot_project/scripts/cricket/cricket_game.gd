@@ -348,6 +348,20 @@ func _enter(p: Phase) -> void:
 				_msg(h.pid, {"type": "hint", "text": "Swing!"})
 
 
+func _haptic_batter(p: String) -> void:
+	if not _is_cpu(bat_team):
+		var h := _team_human(bat_team, batter_names[0])
+		if h:
+			_msg(h.pid, {"type": "haptic", "p": p})
+
+
+func _haptic_bowler(p: String) -> void:
+	if not _is_cpu(field_team()):
+		var h := _team_human(field_team(), bowler_name)
+		if h:
+			_msg(h.pid, {"type": "haptic", "p": p})
+
+
 func _msg(pid: String, data: Dictionary) -> void:
 	var d := data.duplicate()
 	d["to"] = pid
@@ -607,6 +621,7 @@ func _lock_meter() -> void:
 	else:
 		meter_result = "noball" if meter > 0.0 else "wide"
 	Sfx.click(1.0, 1.5 if meter_result == "perfect" else 1.0)
+	_haptic_bowler("double" if meter_result == "perfect" else "tap")
 	hud.flash({"perfect": "PERFECT!", "good": "Good", "noball": "Overstepped!", "wide": "Lost it…"}[meter_result])
 	var hb := _team_human(field_team(), bowler_name)
 	if hb:
@@ -701,6 +716,7 @@ func _bowl() -> void:
 	var from := play.bowler.ch.global_position + Vector3(-0.15, 2.15, 0.4)
 	var v := CricketBall.solve_delivery(from, target, speed, swing)
 	ball.release(from, v, swing, turn)
+	_haptic_bowler("tick")
 	_ball_kind = kind
 	set_meta("kmh", kmh)
 	var tag := ""
@@ -735,6 +751,7 @@ func _on_bat_contact(_p: Vector3, quality: float, edge: bool) -> void:
 	if phase != Phase.DELIVERY:
 		return
 	_hit = true
+	_haptic_batter("double" if edge else ("strong" if quality > 0.8 else "hit"))
 	if edge:
 		hud.flash("Edge!")
 	elif quality > 0.8:
@@ -918,6 +935,13 @@ func _on_play_finished(kind_s: String, runs: int, detail: String) -> void:
 				text = "%d run%s" % [runs, "" if runs == 1 else "s"] if runs > 0 else "Dot ball"
 	print("[cricket] %s %s  ->  %s  (%d/%d, %s ov)" % [teams[bat_team].name, striker, text, score.cur().runs, score.cur().wickets, score.over_text()])
 	hud.big_message(text, kind_s in ["four", "six", "caught", "bowled", "runout"])
+	if out:
+		_haptic_batter("out")
+		_haptic_bowler("strong")
+	elif kind_s == "six":
+		_haptic_batter("long")
+	elif kind_s == "four":
+		_haptic_batter("strong")
 	# strike rotation: odd runs swap ends; end of over swaps again
 	if (kind_s in ["caught", "bowled"]) and not out:
 		text = "Not out – " + ("free hit" if was_free_hit else "no ball") + ("" if runs == 0 else "  +%d" % runs)

@@ -157,7 +157,7 @@ func _start_turn() -> void:
 		if q.pid != p.pid:
 			phone_message.emit({"to": q.pid, "type": "turn", "mine": false, "text": "%s is bowling…" % p.name})
 	phone_message.emit({"to": p.pid, "type": "turn", "mine": true, "text": "Your turn, %s! Press A when ready" % p.name if not solo else ""})
-	phone_message.emit({"to": p.pid, "type": "vibrate", "ms": 120})
+	phone_message.emit({"to": p.pid, "type": "haptic", "p": "double"})
 
 
 func _update_intro() -> void:
@@ -311,6 +311,7 @@ func _release() -> void:
 	hud.show_speed(speed)
 	print("[bowling] release speed=%.1f m/s x=%.2f angle=%.1f deg" % [speed, from.x, rad_to_deg(angle)])
 	phone_message.emit({"to": player().pid, "type": "hint", "text": "Nice throw!"})
+	phone_message.emit({"to": player().pid, "type": "haptic", "p": "tap"})
 
 
 func _cancel_swing() -> void:
@@ -356,10 +357,10 @@ func _count_result() -> void:
 	var text := ""
 	if _standing_before == 10 and knocked == 10:
 		text = "STRIKE!"
-		phone_message.emit({"to": player().pid, "type": "vibrate", "ms": 250})
+		phone_message.emit({"to": player().pid, "type": "haptic", "p": "strong"})
 	elif _standing_before < 10 and standing == 0:
 		text = "SPARE!"
-		phone_message.emit({"to": player().pid, "type": "vibrate", "ms": 150})
+		phone_message.emit({"to": player().pid, "type": "haptic", "p": "double"})
 	elif knocked == 0:
 		text = "GUTTER" if _gutter else "MISS"
 	else:

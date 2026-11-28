@@ -114,6 +114,7 @@
     <div class="sheet">
       <h3>Players on this phone</h3>
       <div id="slots"></div>
+      <button id="hapticsBtn" class="chip" style="align-self:flex-start">Haptics: On</button>
       <div class="sheet-btns">
         <button id="addGuest">+ Add guest</button>
         <button id="doneNames">Done</button>
@@ -129,6 +130,10 @@
     </div>
     <button id="enableBtn">Enable Motion</button>
   </section>
+
+  <!-- iPhone haptics: Safari plays a system tick when a switch toggles -->
+  <input type="checkbox" switch id="hsw" aria-hidden="true" tabindex="-1" style="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none">
+  <label for="hsw" id="hswl" aria-hidden="true" style="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none"></label>
 
   <div id="rotate">Please hold your phone upright<br>(turn on portrait lock)</div>
 
@@ -190,7 +195,9 @@
         $("btnU").classList.toggle("hidden", !m.dpad);
         $("btnD").classList.toggle("hidden", !m.dpad);
       } else if (m.type === "vibrate") {
-        if (navigator.vibrate) navigator.vibrate(m.ms || 100);
+        haptic("", m.ms || 100);
+      } else if (m.type === "haptic") {
+        haptic(m.p || "tap");
       }
     };
   }
@@ -272,6 +279,36 @@
     if (document.visibilityState !== "visible") releaseAll();
   });
 
+  // ---------- haptics ----------
+  // Android: Vibration API. iPhone: no Vibration API in Safari, so toggle a
+  // hidden switch control, which plays a short system haptic tick (iOS 18+).
+  const PATTERNS = {
+    tick: [8], tap: [12], hit: [35], strong: [70, 40, 90], double: [25, 70, 25],
+    long: [220], out: [60, 80, 60, 80, 140],
+  };
+  let hapticsOn = store.get("vs_haptics") !== "off";
+  const canVibrate = typeof navigator.vibrate === "function";
+  function iosTick() { try { $("hswl").click(); } catch (e) {} }
+  function haptic(kind, ms) {
+    if (!hapticsOn) return;
+    const pat = ms ? [ms] : (PATTERNS[kind] || PATTERNS.tap);
+    if (canVibrate) { navigator.vibrate(pat); return; }
+    let t = 0;
+    for (let i = 0; i < pat.length; i += 2) {
+      const n = Math.max(1, Math.round(pat[i] / 45)); // longer buzz = a few ticks in a row
+      for (let k = 0; k < n; k++) setTimeout(iosTick, t + k * 45);
+      t += pat[i] + (pat[i + 1] || 0);
+    }
+  }
+  function renderHaptics() { $("hapticsBtn").textContent = "Haptics: " + (hapticsOn ? "On" : "Off"); }
+  $("hapticsBtn").addEventListener("click", () => {
+    hapticsOn = !hapticsOn;
+    store.set("vs_haptics", hapticsOn ? "on" : "off");
+    renderHaptics();
+    haptic("double");
+  });
+  renderHaptics();
+
   // ---------- players on this phone ----------
   function renderMe() {
     const me = $("me");
@@ -334,7 +371,7 @@
     held[id] = down;
     el.classList.toggle("down", down);
     send({ type: "btn", id, down, t: performance.now() }, true);
-    if (down && navigator.vibrate) navigator.vibrate(12);
+    if (down) haptic(id === "B" ? "tap" : "tick");
   }
   function releaseAll() {
     for (const [id, el] of Object.entries(buttons)) press(id, el, false);

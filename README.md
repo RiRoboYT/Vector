@@ -51,6 +51,18 @@ Each ball:
   - throws are aimed (with drag) at the keeper or bowler, or at the stumps for a run-out
   - the keeper stands back for pace and up for spin
 
+## Before every match: hold A to get ready
+
+After Start (and before every Play Again), each player **holds A on their phone for about a second**. Their card fills up and turns green with READY ✓. Players sharing a phone hold A one after another, and the keyboard player holds Enter. The match (after calibration) starts once everyone is ready.
+
+## Haptics
+
+The phone buzzes on button presses, ball release, bat contact (stronger when you middle it), boundaries, strikes, wickets, calibration and getting ready.
+- **Android:** real vibration patterns.
+- **iPhone:** Safari doesn't allow vibration, so the game uses Safari's built-in haptic tick from a toggle switch (iOS 18+). Longer buzzes are a few ticks in a row.
+
+Turn haptics off in the phone's names sheet (tap your name badge).
+
 ## Multiplayer (bowling)
 
 - **Everyone scans the same QR code.** Each phone that joins becomes a player ("You are Player 2"). A phone keeps its slot if it briefly disconnects.

@@ -28,6 +28,7 @@ func _on_button(pid: String, id: String, down: bool) -> void:
 	phone.motion.calibrate()
 	phone.calibrated = true
 	Sfx.click(1.0, 1.4)
+	roster.send_to_phone(phone.pid, {"type": "haptic", "p": "double"})
 	_done_t = _t
 
 

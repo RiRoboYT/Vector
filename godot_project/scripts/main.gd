@@ -192,7 +192,7 @@ func go_cricket_options() -> void:
 		var o: int = s.overs
 		var so: bool = s.super_over
 		var d: int = s.difficulty
-		var start := func(): calibrate_all(func(): go_cricket(o, so, d))
+		var start := func(): ready_then("Cricket", func(): go_cricket(o, so, d))
 		if _cricket_tutorial_seen:
 			start.call()
 		else:
@@ -219,7 +219,7 @@ func _start_from_lobby() -> void:
 	roster.ensure_keyboard_player()
 	roster.refresh()
 	if _tutorial_seen:
-		calibrate_all(go_bowling)
+		ready_then("Bowling", go_bowling)
 	else:
 		go_tutorial()
 
@@ -228,7 +228,7 @@ func go_tutorial() -> void:
 	var s := TutorialScreen.new()
 	s.done.connect(func(_a):
 		_tutorial_seen = true
-		calibrate_all(go_bowling))
+		ready_then("Bowling", go_bowling))
 	_switch(s)
 
 
@@ -237,7 +237,7 @@ func go_bowling() -> void:
 	g.roster = roster
 	g.finished.connect(func(a):
 		if a == "again":
-			calibrate_all(go_bowling)
+			ready_then("Bowling", go_bowling)
 		else:
 			go_sports())
 	g.phone_message.connect(_route_game_message)
@@ -256,7 +256,7 @@ func go_cricket(overs := 1, super_over := true, difficulty := 1) -> void:
 			g.super_over = false
 	g.finished.connect(func(a):
 		if a == "again":
-			calibrate_all(func(): go_cricket(overs, super_over, difficulty))
+			ready_then("Cricket", func(): go_cricket(overs, super_over, difficulty))
 		else:
 			go_sports())
 	g.phone_message.connect(_route_game_message)
@@ -276,6 +276,16 @@ func _route_game_message(m: Dictionary) -> void:
 # ------------------------------------------------------------ calibration
 
 ## Compulsory before every game: every connected phone calibrates in turn.
+## Before every match: everyone holds A to register, then the compulsory
+## calibration of every phone, then the match.
+func ready_then(sport: String, then: Callable) -> void:
+	var s := ReadyScreen.new()
+	s.roster = roster
+	s.sport = sport
+	s.done.connect(func(_a): calibrate_all(then))
+	_switch(s)
+
+
 func calibrate_all(then: Callable) -> void:
 	roster.reset_calibration()
 	_keyboard_ok = false
